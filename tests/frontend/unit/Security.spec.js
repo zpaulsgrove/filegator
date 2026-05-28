@@ -319,4 +319,46 @@ describe('Security.vue — characterization tests (Workstream 0)', () => {
     // No toast should fire for a field-level error.
     expect(wrapper.vm.$toast.open).not.toHaveBeenCalled()
   })
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 8. R-2: in-flight guard prevents spam clicks during slow requests
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it('performManage in-flight guard rejects re-entry while a call is pending', async () => {
+    // Never-resolving promise — keeps `managing` true.
+    api.mfaDisable.mockReturnValue(new Promise(() => {}))
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.openManage('disable')
+    wrapper.vm.manageForm = { password: 'pw', code: '123456', useBackup: false }
+
+    wrapper.vm.performManage()
+    expect(wrapper.vm.managing).toBe(true)
+    expect(api.mfaDisable).toHaveBeenCalledTimes(1)
+
+    // Second click while the first is in flight — must be a no-op.
+    wrapper.vm.performManage()
+    expect(api.mfaDisable).toHaveBeenCalledTimes(1)
+  })
+
+  it('performManage clears `managing` after success and after error', async () => {
+    api.mfaDisable.mockResolvedValue({})
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.openManage('disable')
+    wrapper.vm.manageForm = { password: 'pw', code: '123456', useBackup: false }
+    wrapper.vm.performManage()
+    await flushPromises()
+    expect(wrapper.vm.managing).toBe(false)
+
+    // Error path — `managing` resets via finally().
+    api.mfaDisable.mockRejectedValue({ response: { status: 500 } })
+    wrapper.vm.openManage('disable')
+    wrapper.vm.manageForm = { password: 'pw', code: '123456', useBackup: false }
+    wrapper.vm.performManage()
+    await flushPromises()
+    expect(wrapper.vm.managing).toBe(false)
+  })
 })

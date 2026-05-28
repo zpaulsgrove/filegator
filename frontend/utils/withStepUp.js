@@ -1,8 +1,6 @@
 import api from '@/api/api'
 import StepUpDialog from '@/views/partials/StepUpDialog.vue'
 
-export const STEP_UP_CANCELLED = Symbol('STEP_UP_CANCELLED')
-
 // 5-second cache so back-to-back dialog opens (e.g., admin clicks Edit then immediately Save)
 // don't double-fetch /getuser. Module-scoped, not per-vm — fine because the cache is purely a
 // freshness signal, not a security boundary.
@@ -29,13 +27,11 @@ async function refreshUserIfStale(vm) {
 }
 
 export default function withStepUp(vm, { actionDescription, dangerWarning = null, action }) {
-  return new Promise(async (resolve, reject) => {
-    // Step 1: refresh user state (best-effort) so mfa_enabled is fresh.
-    await refreshUserIfStale(vm)
-
+  // Refresh first, then open the dialog. Chain rather than wrapping `new Promise(async ...)`
+  // — the async-executor pattern silently drops synchronous throws inside the executor.
+  return refreshUserIfStale(vm).then(() => new Promise((resolve, reject) => {
     const mfaEnabled = !!(vm.$store.state.user && vm.$store.state.user.mfa_enabled)
 
-    // Step 2: open the dialog.
     vm.$modal.open({
       parent: vm,
       component: StepUpDialog,
@@ -51,17 +47,19 @@ export default function withStepUp(vm, { actionDescription, dangerWarning = null
         cancel: () => {
           const err = new Error('Step-up cancelled')
           err.stepUpCancelled = true
-          err.cancelToken = STEP_UP_CANCELLED
           reject(err)
         },
         error: (err) => reject(err),
       },
     })
-  })
+  }))
 }
 
 // Helper for callers that want a tidy `.catch` filter:
 //   .catch(err => { if (isStepUpCancelled(err)) return; throw err })
+//
+// Returns a strict boolean (not the operand) so `=== true` / `.filter()`
+// callers behave predictably.
 export function isStepUpCancelled(err) {
-  return err && (err.stepUpCancelled === true || err.cancelToken === STEP_UP_CANCELLED)
+  return !!(err && err.stepUpCancelled === true)
 }

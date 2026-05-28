@@ -26,6 +26,11 @@ use Tests\MockUsers;
  * Wraps MockUsers via composition so the user store works normally, but the
  * class itself is not in the JsonFile hierarchy and therefore never satisfies
  * `instanceof MfaCapableInterface`.
+ *
+ * Do not refactor this to `extends MockUsers` — MockUsers extends JsonFile
+ * which implements MfaCapableInterface, so inheritance would silently make
+ * this class MFA-capable and defeat the regression target. Composition is
+ * load-bearing; the verbosity is the point.
  */
 class NonMfaCapableAuth implements Service, AuthInterface
 {

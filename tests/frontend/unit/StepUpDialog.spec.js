@@ -51,7 +51,8 @@ function mountDialog(propsData = {}, onConfirmFn = null) {
   })
 
   // Vue 2 quirk: $parent is the root wrapper by default; assign close() directly.
-  wrapper.vm.$parent = { close: jest.fn() }
+  // Provide $children so Vue's destroy() can splice us out without crashing.
+  wrapper.vm.$parent = { close: jest.fn(), $children: [wrapper.vm] }
 
   return wrapper
 }
@@ -262,5 +263,53 @@ describe('StepUpDialog.vue', () => {
 
     expect(wrapper.emitted('cancel')).toBeTruthy()
     expect(wrapper.vm.$parent.close).toHaveBeenCalledTimes(1)
+  })
+
+  // 14. R-1: beforeDestroy fallback — modal closes without a button click
+  //     (backdrop, Escape key, programmatic close, parent unmount) emit cancel.
+  it('emits cancel on beforeDestroy when no event has fired (backdrop/Escape/unmount path)', () => {
+    const wrapper = mountDialog()
+
+    // Simulate destruction without any button having been clicked first.
+    wrapper.destroy()
+
+    expect(wrapper.emitted('cancel')).toBeTruthy()
+    expect(wrapper.emitted('cancel').length).toBe(1)
+  })
+
+  // 15. R-1: beforeDestroy is a no-op once Confirm has already settled the dialog.
+  //     Otherwise the helper's Promise would resolve AND then reject.
+  it('does NOT double-emit cancel after a successful confirm settles the dialog', async () => {
+    const onConfirmFn = makeOnConfirm({ ok: true })
+    const wrapper = mountDialog({ mfaEnabled: true }, onConfirmFn)
+    wrapper.vm.form = { password: 'pw', code: '123456', useBackup: false }
+    const confirmBtn = wrapper.findAll('button').wrappers.find(b => b.text() === 'Confirm')
+    confirmBtn.trigger('click')
+    await flushPromises()
+
+    // Confirmed was emitted once.
+    expect(wrapper.emitted('confirmed')).toBeTruthy()
+    expect(wrapper.emitted('confirmed').length).toBe(1)
+    // No cancel before destroy.
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+
+    // Destroy AFTER confirm — beforeDestroy should NOT add a cancel emission.
+    wrapper.destroy()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+  })
+
+  // 16. R-1: same guard for the error path — emit('error') already settled.
+  it('does NOT double-emit cancel after an error has settled the dialog', async () => {
+    const onConfirmFn = jest.fn().mockRejectedValue({ response: { status: 500 } })
+    const wrapper = mountDialog({ mfaEnabled: true }, onConfirmFn)
+    wrapper.vm.form = { password: 'pw', code: '123456', useBackup: false }
+    wrapper.findAll('button').wrappers.find(b => b.text() === 'Confirm').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('error')).toBeTruthy()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+
+    wrapper.destroy()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
   })
 })

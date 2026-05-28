@@ -74,3 +74,33 @@ When the acting admin has MFA enrolled, the following endpoints require a fresh 
 `stepup_password` is the acting admin's password; `stepup_code` is a current TOTP or a backup code (set `stepup_use_backup: true` for the latter). The 90-second TOTP replay marker applies — five admin writes in one minute need five distinct codes. See `docs/follow-ups.md` for the planned step-up-token follow-up that amortises one TOTP across a short admin-write window.
 
 When the acting admin has no MFA enrolled, step-up is a no-op (no behaviour change for deploys that haven't enabled `mfa_required_for_admins`).
+
+### LDAP and WPAuth: dialog appears but password is not verified server-side
+
+The `RequiresStepUpAuth` trait gates on `instanceof MfaCapableInterface`. Only the bundled `JsonFile` adapter implements that interface; `LDAP` and `WPAuth` do not. On those adapters, the trait early-returns `ok=true` for the entire step-up flow — including any `stepup_password` the frontend sent.
+
+This means: on LDAP/WPAuth deploys, the new step-up dialog will appear in the admin panel and collect a password, but the backend will accept the request whether the password is right, wrong, or empty. The dialog's "stolen-session re-auth defense" is **not enforced** for these adapters; it is theatre.
+
+If you run an LDAP or WPAuth deploy and want real re-auth defense on admin actions, the practical options today are:
+
+- Disable the dialog client-side by patching `frontend/utils/withStepUp.js` to skip the modal when `$store.state.user.mfa_enabled` is absent (the field is omitted entirely for non-MfaCapable adapters — that's the detection hook).
+- Add a `verifyPasswordOnly` method to `AuthInterface` (currently only on `MfaCapableInterface`) and extend `RequiresStepUpAuth::stepUpVerify` to call it on the non-MfaCapable branch. That's a backend change; tracked in follow-ups.
+
+The JsonFile adapter behaviour is unchanged: with MFA enrolled, both password and TOTP are verified; without MFA enrolled, the step-up is a no-op.
+
+### Discoverability for API clients
+
+Agents and scripted clients can inspect `mfa_enabled` on `GET /getuser` to decide whether to gather a code before calling the admin endpoints above. The field is `true` when the acting user has MFA enrolled, `false` when not. It is **omitted entirely** when the configured auth adapter does not implement `MfaCapableInterface` (LDAP, WPAuth) — clients should treat absence as "step-up not enforceable on this deploy."
+
+### Step-up error responses
+
+The four admin endpoints (and the self-service `/mfa/disable` and `/mfa/backup_codes/regenerate`) return distinct shapes on step-up failure so clients can map errors to the right field:
+
+| Status + body | Meaning | Client action |
+|---|---|---|
+| `422` string `"Password and current MFA code required"` | Missing or empty fields | Re-prompt for both |
+| `422` `{"password": "Wrong password"}` | Bad password | Re-prompt for password; clear input |
+| `422` `{"code": "Invalid code"}` | Bad TOTP or backup code | Re-prompt for code; clear input |
+| `429` string `"Not Allowed"` | Per-IP or per-username lockout active | Back off; wait `lockout_timeout` seconds |
+
+Note: the self-service endpoints (`/mfa/disable`, `/mfa/backup_codes/regenerate`) use the legacy field names `password` + `code` + `use_backup` rather than the `stepup_*` prefix; the response shape is identical.

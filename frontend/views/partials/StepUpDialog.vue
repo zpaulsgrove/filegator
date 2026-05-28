@@ -4,11 +4,13 @@
       <p class="modal-card-title">{{ actionDescription }}</p>
     </header>
     <section class="modal-card-body">
-      <!-- Danger warning (only when dangerWarning prop is non-null).
+      <!-- Danger warning (only when dangerWarning prop is non-null AND not locked out).
            Rendered with {{ }} interpolation ONLY — never v-html.
-           XSS hardening: usernames flow through props from user data. -->
+           XSS hardening: usernames flow through props from user data.
+           Hidden during lockout to avoid the confusing "this action permanently
+           removes / Too many attempts" co-render that implies a partial effect. -->
       <b-notification
-        v-if="dangerWarning"
+        v-if="dangerWarning && !lockedOut"
         type="is-warning"
         :closable="false"
         role="alert"
@@ -86,6 +88,21 @@ export default {
       genericError: null,
       submitting: false,
       lockedOut: false,
+      // `settled` flips true once one of confirmed/cancel/error has been
+      // emitted, so the beforeDestroy fallback (R-1) doesn't double-emit on
+      // a normal lifecycle close.
+      settled: false,
+    }
+  },
+  beforeDestroy() {
+    // R-1: Buefy b-modal has close paths besides our Confirm/Cancel buttons —
+    // backdrop click, Escape key, programmatic close, parent unmount. None of
+    // those emit our events on their own. Without this hook, the helper's
+    // outer Promise hangs forever and the caller's .then/.catch never fires.
+    // Emit cancel-as-default so the helper always settles.
+    if (!this.settled) {
+      this.settled = true
+      this.$emit('cancel')
     }
   },
   computed: {
@@ -109,6 +126,7 @@ export default {
       if (this.submitting) return
       // Emit 'cancel' so workstream 5 (withStepUp.js) can catch it and throw
       // the sentinel rejection — keeping the sentinel contract out of this component.
+      this.settled = true
       this.$emit('cancel')
       this.$parent.close()
     },
@@ -125,6 +143,7 @@ export default {
         }
         const result = await this.onConfirm(stepUpFields)
         // Success — emit and close.
+        this.settled = true
         this.$emit('confirmed', result)
         this.$parent.close()
       } catch (err) {
@@ -165,7 +184,11 @@ export default {
       }
 
       // Any other error: emit and close so caller's existing error toast fires.
-      this.$emit('error', err)
+      // Synthesise a real Error when err is falsy so callers' handleError(undefined)
+      // doesn't render an opaque "Unknown error" toast with no diagnostic. ADV-006.
+      const out = err || new Error('Step-up failed (no error details)')
+      this.settled = true
+      this.$emit('error', out)
       this.$parent.close()
     },
   },

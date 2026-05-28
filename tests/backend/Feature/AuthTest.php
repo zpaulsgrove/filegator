@@ -278,4 +278,45 @@ class AuthTest extends TestCase
         // false signal is sent to the frontend step-up dialog.
         $this->assertArrayNotHasKey('mfa_enabled', $data['data'], 'mfa_enabled must be absent when the auth adapter is not MFA-capable');
     }
+
+    /**
+     * Pin for R-9 (MFA hardening review gap).
+     *
+     * /changepassword currently does NOT require step-up auth, even when
+     * the calling user has MFA enrolled. It accepts oldpassword +
+     * newpassword only — no stepup_password / stepup_code plumbing — and
+     * succeeds. This is an intentional deferral; AdminController's
+     * mutating routes were prioritized for step-up.
+     *
+     * If step-up is added to /changepassword later, this test will fail.
+     * That's the point: update the test intentionally to document the
+     * shift in policy, don't just delete this assertion.
+     */
+    public function testChangePasswordDoesNotRequireStepUpEvenWhenMfaEnabled()
+    {
+        // Enroll MFA on john, then attach a real authenticated session via
+        // the same helper MfaTest uses for post-login state. We bypass the
+        // /login/mfa second-step on purpose — we want to assert that an
+        // MFA-enrolled, authenticated user can mutate their password
+        // without re-proving possession of their second factor.
+        $secret = \OTPHP\TOTP::create()->getSecret();
+        $codes = \Filegator\Services\Mfa\BackupCodeGenerator::generate(3, 10);
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $auth = $app->resolve(\Filegator\Services\Auth\AuthInterface::class);
+        $auth->setMfaSecret('john@example.com', $secret);
+        $auth->enableMfa('john@example.com', \Filegator\Services\Mfa\BackupCodeGenerator::hashAll($codes));
+        $auth->establishSessionFor('john@example.com');
+        $this->captureSession();
+
+        // POST with ONLY oldpassword + newpassword — no stepup_* fields.
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'john123',
+            'newpassword' => 'password123',
+        ]);
+
+        // Today: 200. When R-9 is closed and step-up is required here,
+        // this will start returning 422 / 403 and the test will fail.
+        $this->assertOk();
+    }
 }

@@ -617,6 +617,35 @@ class MfaTest extends TestCase
         $this->assertNull($app->resolve(AuthInterface::class)->getEmail('john@example.com'));
     }
 
+    /**
+     * Pin for R-9 (MFA hardening review gap).
+     *
+     * /me/email currently does NOT require step-up auth, even when the
+     * calling user has MFA enrolled. Email is part of buildSessionHash
+     * and influences notification routing — mutating it is a
+     * security-relevant action — but the route accepts an email field
+     * alone with no stepup_password / stepup_code plumbing. This is an
+     * intentional deferral; AdminController's mutating routes were
+     * prioritized for step-up.
+     *
+     * If step-up is added to /me/email later, this test will fail.
+     * That's the point: update the test intentionally to document the
+     * shift in policy, don't just delete this assertion.
+     */
+    public function testUpdateOwnEmailDoesNotRequireStepUpEvenWhenMfaEnabled()
+    {
+        $this->enrollMfa('john@example.com');
+        $this->establishSessionFor('john@example.com');
+
+        // POST with ONLY email — no stepup_* fields.
+        $this->sendRequest('POST', '/me/email', ['email' => 'pinned@example.test']);
+
+        // Today: 200. When R-9 is closed and step-up is required here,
+        // this will start returning 422 / 403 and the test will fail.
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['email' => 'pinned@example.test']]);
+    }
+
     // ---------------------------------------------------------------------
     // Test gap closure: #29 (/mfa/backup_codes/regenerate)
     // ---------------------------------------------------------------------

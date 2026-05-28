@@ -246,3 +246,75 @@ describe('UserEdit.vue — step-up integration on resetMfa()', () => {
     expect(wrapper.vm.$parent.close).not.toHaveBeenCalled()
   })
 })
+
+describe('UserEdit.vue — multi-folder repeatable rows', () => {
+
+  it('renders one folder row per homedir on mount', () => {
+    const wrapper = mountUserEdit('edit', { homedirs: ['/projects', '/personal'] })
+
+    expect(wrapper.vm.formFields.homedirs).toHaveLength(2)
+    expect(wrapper.vm.formFields.homedirs[0]).toBe('/projects')
+    expect(wrapper.vm.formFields.homedirs[1]).toBe('/personal')
+  })
+
+  it('addFolder() appends an empty row', () => {
+    const wrapper = mountUserEdit('edit', { homedirs: ['/single'] })
+
+    wrapper.vm.addFolder()
+
+    expect(wrapper.vm.formFields.homedirs).toHaveLength(2)
+    expect(wrapper.vm.formFields.homedirs[1]).toBe('')
+  })
+
+  it('removeFolder(idx) splices that row when length > 1', () => {
+    const wrapper = mountUserEdit('edit', { homedirs: ['/a', '/b', '/c'] })
+
+    wrapper.vm.removeFolder(1)
+
+    expect(wrapper.vm.formFields.homedirs).toEqual(['/a', '/c'])
+  })
+
+  it('removeFolder() is a no-op when only one row remains', () => {
+    const wrapper = mountUserEdit('edit', { homedirs: ['/onlyone'] })
+
+    wrapper.vm.removeFolder(0)
+
+    expect(wrapper.vm.formFields.homedirs).toEqual(['/onlyone'])
+  })
+
+  it('save() pre-filters blank rows before invoking withStepUp\'s action', () => {
+    withStepUpModule.default.mockReturnValue(new Promise(() => {}))
+    api.updateUser.mockResolvedValue({})
+    const wrapper = mountUserEdit('edit', { homedirs: ['/a', '/b'] })
+
+    // Inject a mix of valid paths, empty strings, and whitespace-only entries.
+    wrapper.vm.formFields.homedirs = ['/a', '', '/b', '  ']
+
+    wrapper.vm.save()
+    const [, opts] = withStepUpModule.default.mock.calls[0]
+    opts.action({ stepup_password: 'pw', stepup_code: '123456', stepup_use_backup: false })
+
+    expect(api.updateUser).toHaveBeenCalledTimes(1)
+    const call = api.updateUser.mock.calls[0][0]
+    // Blank and whitespace-only entries must be stripped out.
+    expect(call.homedirs).toEqual(['/a', '/b'])
+  })
+
+  it('save() also sets the legacy homedir scalar to homedirs[0]', () => {
+    withStepUpModule.default.mockReturnValue(new Promise(() => {}))
+    api.updateUser.mockResolvedValue({})
+    const wrapper = mountUserEdit('edit', { homedirs: ['/a', '/b'] })
+
+    wrapper.vm.formFields.homedirs = ['/a', '', '/b', '  ']
+
+    wrapper.vm.save()
+    const [, opts] = withStepUpModule.default.mock.calls[0]
+    opts.action({ stepup_password: 'pw', stepup_code: '123456', stepup_use_backup: false })
+
+    const call = api.updateUser.mock.calls[0][0]
+    // Back-compat scalar must equal the first non-blank entry post-trim.
+    expect(call.homedir).toBe('/a')
+    // And the edit-mode key slug must be present.
+    expect(call.key).toBe('john@example.com')
+  })
+})

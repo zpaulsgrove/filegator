@@ -19,6 +19,14 @@ class InMemoryMailer implements Service, MailerInterface
 
     public static $configured = true;
 
+    /**
+     * Artificial delay applied on every send() before recording the message.
+     * Defaults to 0 (instant), matching the no-delay production-fake behaviour.
+     * Tests opt in by setting this; TestCase::setUp() resets it to 0 so the
+     * delay never leaks between tests.
+     */
+    public static int $delayMicroseconds = 0;
+
     public function init(array $config = [])
     {
         if (array_key_exists('configured', $config)) {
@@ -33,6 +41,9 @@ class InMemoryMailer implements Service, MailerInterface
 
     public function send(string $to, string $subject, string $textBody, ?string $htmlBody = null, ?string $fromEmail = null, ?string $fromName = null): bool
     {
+        if (self::$delayMicroseconds > 0) {
+            usleep(self::$delayMicroseconds);
+        }
         self::$messages[] = [
             'to' => $to,
             'subject' => $subject,
@@ -48,6 +59,7 @@ class InMemoryMailer implements Service, MailerInterface
     {
         self::$messages = [];
         self::$configured = true;
+        self::$delayMicroseconds = 0;
     }
 
     public static function last(): ?array

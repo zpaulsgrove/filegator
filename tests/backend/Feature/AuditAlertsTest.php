@@ -302,6 +302,55 @@ class AuditAlertsTest extends TestCase
         $this->assertStringContainsString('WARNING', $msg['text']);
     }
 
+    public function testBackupCodeLoginIsCurrentlyBlockedBySynchronousSmtpSend()
+    {
+        // R-3 pin: /login/mfa currently blocks on SMTP send. If async dispatch
+        // is added, this test will fail — that means the fix landed and this
+        // pin should be updated to assert the opposite (elapsed < delay).
+        //
+        // Mechanism: InMemoryMailer::$delayMicroseconds simulates the latency
+        // a real SMTP send would add (production timeout is up to 5s). Because
+        // AuditMailer::mfaBackupCodeConsumed is called inline from the login
+        // controller, the HTTP response cannot return until usleep() finishes.
+        $delayMicros = 50_000; // 50ms — reliably detectable, suite-friendly.
+        InMemoryMailer::$delayMicroseconds = $delayMicros;
+
+        try {
+            $codes = ['ABCDE-12345', 'WXYZH-98765', 'QQQQQ-11111'];
+            $app = $this->sendRequest('GET', '/getuser');
+            $auth = $app->resolve(AuthInterface::class);
+            $auth->setMfaSecret('john@example.com', TOTP::create()->getSecret());
+            $auth->enableMfa('john@example.com', BackupCodeGenerator::hashAll($codes));
+
+            $this->sendRequest('POST', '/login', ['username' => 'john@example.com', 'password' => 'john123']);
+            $this->captureSession();
+            $nonce = (string) ($this->decodeResponseJson()['data']['mfa_nonce'] ?? '');
+
+            $start = microtime(true);
+            $this->sendRequest('POST', '/login/mfa', ['code' => 'ABCDE-12345', 'use_backup' => true, 'mfa_nonce' => $nonce]);
+            $elapsedMicros = (microtime(true) - $start) * 1_000_000;
+
+            $this->assertOk();
+            // Sanity: the backup-code audit actually fired (otherwise this
+            // test would pass vacuously if the alert path was skipped).
+            $audit = $this->lastAudit();
+            $this->assertNotNull($audit);
+            $this->assertStringContainsString('MFA backup code used: john@example.com', $audit['subject']);
+
+            // The actual pin. >= because the delay is the floor; real timing
+            // adds the rest of request handling on top.
+            $this->assertGreaterThanOrEqual(
+                $delayMicros,
+                $elapsedMicros,
+                'Expected /login/mfa to block for at least the simulated SMTP delay. '.
+                'If this assertion fails, async dispatch likely landed — update the pin.'
+            );
+        } finally {
+            // Belt-and-braces; TestCase::setUp also resets via InMemoryMailer::reset().
+            InMemoryMailer::$delayMicroseconds = 0;
+        }
+    }
+
     public function testFailedBackupCodeAtLoginDoesNotFireAudit()
     {
         $codes = ['ABCDE-12345', 'WXYZH-98765'];
@@ -640,6 +689,44 @@ class AuditAlertsTest extends TestCase
 
         // Single-folder users keep the singular "Folder:" label in text.
         $this->assertStringContainsString('Folder: /john', $msg['text']);
+    }
+
+    public function testWeeklyDigestRendersAllHomedirsForMultiFolderRow()
+    {
+        // Closes the UAT-section-F multi-folder rendering gap: pin the contract
+        // that sendWeeklyDigest() renders every entry in the `homedirs` array
+        // (not just element 0) in both the text and HTML bodies, and that the
+        // text path never lets a raw array string-cast leak through as the
+        // literal word "Array" (the classic PHP gotcha when (string)$arr fires).
+        $app = $this->bootFreshApp();
+        $audit = $app->resolve(AuditMailer::class);
+
+        $rows = [[
+            'username'    => 'pat@example.com',
+            'name'        => 'Pat Multi',
+            'role'        => 'user',
+            'homedirs'    => ['/projects', '/personal'],
+            'permissions' => ['read', 'write'],
+            'mfa_enabled' => true,
+            'email'       => 'pat@external.test',
+        ]];
+
+        $sent = $audit->sendWeeklyDigest($rows);
+        $this->assertTrue($sent);
+
+        $msg = $this->lastAudit();
+        $this->assertNotNull($msg);
+
+        // Text: plural label + both folders, joined (no "Array" leakage).
+        $this->assertStringContainsString('Folders: /projects, /personal', $msg['text']);
+        $this->assertStringNotContainsString('Folder: Array', $msg['text']);
+        $this->assertStringNotContainsString('Folders: Array', $msg['text']);
+
+        // HTML: both folder paths rendered as separate cells, neither lost.
+        $this->assertNotNull($msg['html']);
+        $this->assertStringContainsString('/projects', $msg['html']);
+        $this->assertStringContainsString('/personal', $msg['html']);
+        $this->assertStringNotContainsString('>Array<', $msg['html']);
     }
 
     public function testEmailChangeFiresEmailSubject()

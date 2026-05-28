@@ -9,7 +9,11 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [12.x, 14.x, 16.x, 18.x, 20.x, 22.x]
+        # Node 12/14/16 dropped after the Cypress 3.8.3 → 14 upgrade
+        # (Cypress 14's postinstall script uses optional chaining and
+        # requires Node >=18). Those Node lines have also been EOL since
+        # 2022/2023, so dropping them aligns CI with supported runtimes.
+        node-version: [18.x, 20.x, 22.x]
 
     steps:
     - name: Checkout

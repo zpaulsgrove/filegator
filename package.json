@@ -6,9 +6,12 @@
     "serve": "composer install && npm i && concurrently \"php -S 0.0.0.0:8081\" \"vue-cli-service serve --port 8080\"",
     "build": "vue-cli-service build --no-clean",
     "test:unit": "vue-cli-service test:unit",
-    "test:e2e": "vue-cli-service test:e2e --headless",
+    "test:e2e": "start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run'",
+    "test:e2e:headed": "start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run --headed'",
     "lint": "vue-cli-service lint --no-fix frontend/",
-    "e2e": "vue-cli-service test:e2e"
+    "e2e": "start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress open'",
+    "cypress:run": "cypress run",
+    "cypress:open": "cypress open"
   },
   "dependencies": {
     "core-js": "^3.6.5",
@@ -21,7 +24,6 @@
   "devDependencies": {
     "@fortawesome/fontawesome-free": "^5.13.0",
     "@vue/cli-plugin-babel": "^4.3.1",
-    "@vue/cli-plugin-e2e-cypress": "^4.3.1",
     "@vue/cli-plugin-eslint": "^4.3.1",
     "@vue/cli-plugin-unit-jest": "^4.3.1",
     "@vue/cli-service": "^4.3.1",
@@ -32,11 +34,13 @@
     "babel-jest": "^24.9.0",
     "buefy": "^0.7.10",
     "concurrently": "^4.1.2",
+    "cypress": "^14.0.0",
     "eslint": "^5.16.0",
     "eslint-plugin-vue": "^5.0.0",
     "sass": "^1.82.0",
     "resumablejs": "^1.1.0",
     "sass-loader": "^7.3.1",
+    "start-server-and-test": "^2.0.0",
     "vue": "^2.6.11",
     "vue-clipboard2": "^0.3.1",
     "vue-router": "^3.1.6",

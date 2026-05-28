@@ -58,6 +58,7 @@ import UserEdit from './partials/UserEdit'
 import Menu from './partials/Menu'
 import Pagination from './partials/Pagination'
 import api from '../api/api'
+import withStepUp, { isStepUpCancelled } from '../utils/withStepUp'
 import _ from 'lodash'
 
 export default {
@@ -81,26 +82,22 @@ export default {
   },
   methods: {
     remove(user) {
-      this.$dialog.confirm({
-        message: this.lang('Are you sure you want to do this?'),
-        type: 'is-danger',
-        cancelText: this.lang('Cancel'),
-        confirmText: this.lang('Confirm'),
-        onConfirm: () => {
-          api.deleteUser({
-            username: user.username
-          })
-            .then(() => {
-              this.users = _.reject(this.users, u => u.username == user.username)
-              this.$toast.open({
-                message: this.lang('Deleted'),
-                type: 'is-success',
-              })
-            })
-            .catch(error => this.handleError(error))
-          this.checked = []
-        }
+      withStepUp(this, {
+        actionDescription: this.lang('Delete user {0}', user.username),
+        dangerWarning: this.lang('This permanently removes the user and all their session state.'),
+        action: (creds) => api.deleteUser({ username: user.username, ...creds }),
       })
+        .then(() => {
+          this.users = _.reject(this.users, u => u.username == user.username)
+          this.$toast.open({
+            message: this.lang('Deleted'),
+            type: 'is-success',
+          })
+        })
+        .catch(err => {
+          if (isStepUpCancelled(err)) return
+          this.handleError(err)
+        })
     },
     permissions(array) {
       return _.join(array, ', ')

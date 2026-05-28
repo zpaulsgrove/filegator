@@ -54,7 +54,7 @@ class AuthController
             if ($auth->authenticate($username, $password)) {
                 $this->seedActiveHomedirAfterLogin($session, $auth, $username);
                 $this->logger->log("Logged in {$username} from IP ".$ip);
-                return $response->json($this->userResponsePayload($auth->user(), $session));
+                return $response->json($this->userResponsePayload($auth->user(), $session, $auth));
             }
             return $this->failLogin($tmpfs, $response, $username, $ip);
         }
@@ -115,7 +115,7 @@ class AuthController
         $auth->establishSessionFor($username);
         $this->seedActiveHomedirAfterLogin($session, $auth, $username);
         $this->logger->log("Logged in {$username} from IP ".$ip);
-        return $response->json($this->userResponsePayload($auth->user(), $session));
+        return $response->json($this->userResponsePayload($auth->user(), $session, $auth));
     }
 
     public function loginMfa(Request $request, Response $response, AuthInterface $auth, TmpfsInterface $tmpfs, Config $config, SessionStorageInterface $session, MfaService $mfa, MfaLockout $lockout, AuditMailer $audit)
@@ -183,7 +183,7 @@ class AuthController
         $this->completeMfaLogin($auth, $session, $username);
 
         $this->logger->log("MFA login complete for {$username} from {$ip}");
-        return $response->json($this->userResponsePayload($auth->user(), $session));
+        return $response->json($this->userResponsePayload($auth->user(), $session, $auth));
     }
 
     public function loginMfaSetup(Request $request, Response $response, AuthInterface $auth, TmpfsInterface $tmpfs, Config $config, SessionStorageInterface $session, MfaService $mfa, MfaLockout $lockout)
@@ -227,7 +227,7 @@ class AuthController
 
         $this->logger->log("MFA setup complete for {$username} from {$ip}");
         return $response->json([
-            'user' => $this->userResponsePayload($auth->user(), $session),
+            'user' => $this->userResponsePayload($auth->user(), $session, $auth),
             'backup_codes' => $backupCodes,
         ]);
     }
@@ -247,7 +247,7 @@ class AuthController
     {
         $user = $auth->user() ?: $auth->getGuest();
 
-        return $response->json($this->userResponsePayload($user, $session));
+        return $response->json($this->userResponsePayload($user, $session, $auth));
     }
 
     /**
@@ -256,11 +256,20 @@ class AuthController
      * (and Login.vue post-auth path) can route multi-folder users
      * straight into '/' when their previously-picked folder is still
      * valid, instead of bouncing back to the picker on every reload.
+     *
+     * When the auth adapter implements MfaCapableInterface, also includes
+     * `mfa_enabled` so the frontend step-up dialog can decide between
+     * password-only and password+code form modes. For adapters that do not
+     * implement MfaCapableInterface (LDAP, WPAuth, etc.) the field is
+     * omitted — callers that depend on it must handle its absence.
      */
-    protected function userResponsePayload($user, SessionStorageInterface $session): array
+    protected function userResponsePayload($user, SessionStorageInterface $session, AuthInterface $auth = null): array
     {
         $payload = $user->jsonSerialize();
         $payload['active_homedir'] = $session->get(FileController::SESSION_ACTIVE_HOMEDIR, null);
+        if ($auth instanceof MfaCapableInterface) {
+            $payload['mfa_enabled'] = (bool) ($auth->getMfaState($user->getUsername())['enabled'] ?? false);
+        }
         return $payload;
     }
 

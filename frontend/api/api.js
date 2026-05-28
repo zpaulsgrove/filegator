@@ -171,14 +171,18 @@ const api = {
   },
   deleteUser(params) {
     return new Promise((resolve, reject) => {
-      axios.post('deleteuser/'+params.username)
+      const body = {}
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+      axios.post('deleteuser/'+params.username, body)
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
     })
   },
   storeUser(params) {
     return new Promise((resolve, reject) => {
-      axios.post('storeuser', {
+      const body = {
         role: params.role,
         name: params.name,
         username: params.username,
@@ -190,14 +194,18 @@ const api = {
         homedir: params.homedir,
         password: params.password,
         permissions: params.permissions,
-      })
+      }
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+      axios.post('storeuser', body)
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
     })
   },
   updateUser(params) {
     return new Promise((resolve, reject) => {
-      axios.post('updateuser/'+params.key, {
+      const body = {
         role: params.role,
         name: params.name,
         username: params.username,
@@ -206,7 +214,11 @@ const api = {
         homedir: params.homedir,
         password: params.password,
         permissions: params.permissions,
-      })
+      }
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+      axios.post('updateuser/'+params.key, body)
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
     })
@@ -301,7 +313,11 @@ const api = {
   },
   adminResetMfa(params) {
     return new Promise((resolve, reject) => {
-      axios.post('admin/users/' + encodeURIComponent(params.username) + '/reset_mfa')
+      const body = {}
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+      axios.post('admin/users/' + encodeURIComponent(params.username) + '/reset_mfa', body)
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
     })

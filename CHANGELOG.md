@@ -15,6 +15,8 @@
   * Backup-code consumption now fires a `mfaBackupCodeConsumed` audit alert (sent to the configured audit recipient) with a threshold-warning when ≤ 2 codes remain.
 * New services: `Filegator\Services\Mfa\MfaSecretCrypto`, `Filegator\Services\Auth\MfaLockout`.
 * New config keys: `mfa_pending_bind_ua` (default `true`), `mfa_pending_bind_ip_prefix` (default `null`).
+* **Frontend step-up dialog for admin sensitive actions:** the admin panel now opens a confirmation dialog before submitting `/storeuser`, `/updateuser`, `/deleteuser`, or `/admin/users/{u}/reset_mfa`. The dialog collects password + 6-digit code (or backup code) and forwards them as `stepup_*` fields. Always opens regardless of MFA state — the form adapts (password-only when no MFA enrolled) to provide stolen-session re-auth defense even on deploys that haven't required admin MFA. Self-service MFA flows in `/security` (disable, regenerate backup codes) now use the same shared form partial and benefit from inline field-error rendering (fixes a pre-existing "Verification failed" generic-toast swallow on wrong password/code).
+* `/getuser` response now includes an additive `mfa_enabled: bool` field when the auth adapter implements `MfaCapableInterface`. Non-MfaCapable adapters (LDAP, WPAuth) omit it; existing API consumers that don't read the field are unaffected.
 
 ## 7.14.0 - 2026-04-18
 * Reworked bottom pane for file uploads by @NikhilC2209 (see #580)

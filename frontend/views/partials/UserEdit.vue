@@ -116,6 +116,7 @@
 <script>
 import Tree from './Tree'
 import api from '../../api/api'
+import withStepUp, { isStepUpCancelled } from '../../utils/withStepUp'
 import _ from 'lodash'
 
 export default {
@@ -248,24 +249,21 @@ export default {
       }
     },
     resetMfa() {
-      this.$dialog.confirm({
-        message: this.lang('Reset MFA for this user? They will need to re-enroll on next login.'),
-        type: 'is-danger',
-        cancelText: this.lang('Cancel'),
-        confirmText: this.lang('Reset'),
-        onConfirm: () => {
-          api.adminResetMfa({ username: this.user.username })
-            .then(() => {
-              this.$toast.open({ message: this.lang('MFA reset'), type: 'is-success' })
-              this.$emit('updated')
-              this.$parent.close()
-            })
-            .catch(e => this.handleError(e))
-        }
+      withStepUp(this, {
+        actionDescription: this.lang('Reset MFA for {0}', this.user.username),
+        dangerWarning: this.lang('This resets MFA for the user. They will need to re-enroll on their next login.'),
+        action: (creds) => api.adminResetMfa({ username: this.user.username, ...creds }),
       })
+        .then(() => {
+          this.$emit('updated')
+          this.$parent.close()
+        })
+        .catch(err => {
+          if (isStepUpCancelled(err)) return
+          this.handleError(err)
+        })
     },
     save() {
-
       let method = this.action == 'add' ? api.storeUser : api.updateUser
 
       // Strip blank rows before submitting; the backend would do the
@@ -276,7 +274,7 @@ export default {
         .map(h => (typeof h === 'string') ? h.trim() : '')
         .filter(h => h !== '')
 
-      method({
+      const payload = {
         key: this.user.username,
         role: this.formFields.role,
         name: this.formFields.name,
@@ -290,6 +288,14 @@ export default {
         homedir: homedirs[0] || '',
         password: this.formFields.password,
         permissions: this.getPermissionsArray(),
+      }
+
+      withStepUp(this, {
+        actionDescription: this.lang(
+          this.action == 'add' ? 'Create user {0}' : 'Update user {0}',
+          payload.username || this.user.username
+        ),
+        action: (creds) => method({ ...payload, ...creds }),
       })
         .then(res => {
           this.$toast.open({
@@ -300,7 +306,10 @@ export default {
           this.$parent.close()
         })
         .catch(errors => {
-          if (typeof errors.response.data.data != 'object') {
+          if (isStepUpCancelled(errors)) return
+          // Non-step-up 422 (dup-username, invalid email, etc.) routes
+          // through the existing formErrors mapping below.
+          if (! errors || ! errors.response || typeof errors.response.data.data != 'object') {
             this.handleError(errors)
           }
           _.forEach(errors.response.data, err => {

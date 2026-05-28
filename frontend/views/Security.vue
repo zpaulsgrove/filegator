@@ -129,23 +129,12 @@
             </p>
           </header>
           <section class="modal-card-body">
-            <b-field :label="lang('Current password')">
-              <b-input v-model="reauthPassword" type="password" password-reveal />
-            </b-field>
-            <b-field :label="useBackupForManage ? lang('Backup code') : lang('6-digit code')">
-              <b-input
-                v-model="reauthCode"
-                type="text"
-                :placeholder="useBackupForManage ? 'XXXXX-XXXXX' : '123456'"
-                :style="useBackupForManage ? 'font-family: monospace; font-size: 1.1em; letter-spacing: 0.05em; text-transform: uppercase' : 'font-family: monospace; font-size: 1.2em; letter-spacing: 0.15em'"
-                autocomplete="one-time-code"
-                @input="onReauthInput"
-                key="reauth-code-input"
-              />
-            </b-field>
-            <a @click="toggleReauthBackup">
-              {{ useBackupForManage ? lang('Use authenticator code') : lang('Use a backup code') }}
-            </a>
+            <MfaStepUpForm
+              v-model="manageForm"
+              :show-code="true"
+              :errors="manageFormErrors"
+              @clear-error="manageFormErrors = { ...manageFormErrors, [$event]: null }"
+            />
           </section>
           <footer class="modal-card-foot">
             <button class="button" @click="manageOpen = false">
@@ -163,12 +152,13 @@
 
 <script>
 import Menu from './partials/Menu'
+import MfaStepUpForm from './partials/MfaStepUpForm'
 import api from '../api/api'
 import QRCode from 'qrcode'
 
 export default {
   name: 'Security',
-  components: { Menu },
+  components: { Menu, MfaStepUpForm },
   data() {
     return {
       state: null,
@@ -182,9 +172,8 @@ export default {
       cpErrors: {},
       manageOpen: false,
       manageMode: 'disable',
-      reauthPassword: '',
-      reauthCode: '',
-      useBackupForManage: false,
+      manageForm: { password: '', code: '', useBackup: false },
+      manageFormErrors: { password: null, code: null },
     }
   },
   mounted() {
@@ -261,28 +250,20 @@ export default {
     openManage(mode) {
       this.manageMode = mode
       this.manageOpen = true
-      this.reauthPassword = ''
-      this.reauthCode = ''
-      this.useBackupForManage = false
-    },
-    onReauthInput() {
-      if (this.useBackupForManage) {
-        this.reauthCode = (this.reauthCode || '').toUpperCase()
-      }
-    },
-    toggleReauthBackup() {
-      this.useBackupForManage = !this.useBackupForManage
-      this.reauthCode = ''
+      this.manageForm = { password: '', code: '', useBackup: false }
+      this.manageFormErrors = { password: null, code: null }
     },
     performManage() {
       const args = {
-        password: this.reauthPassword,
-        code: this.reauthCode,
-        useBackup: this.useBackupForManage,
+        password: this.manageForm.password,
+        code: this.manageForm.code,
+        useBackup: this.manageForm.useBackup,
       }
       const call = this.manageMode === 'disable'
         ? api.mfaDisable(args)
         : api.mfaRegenerateBackupCodes(args)
+      // Clear stale field errors before retry.
+      this.manageFormErrors = { password: null, code: null }
       call.then(res => {
         this.manageOpen = false
         if (this.manageMode === 'regenerate') {
@@ -291,7 +272,29 @@ export default {
           this.$toast.open({ message: this.lang('MFA disabled'), type: 'is-success' })
         }
         this.refresh()
-      }).catch(() => {
+      }).catch(err => {
+        // Map 422 field errors inline (canonical pattern; mirrors
+        // changePassword at lines 215-229). Replaces the previous bare-catch
+        // swallow that surfaced a generic toast for wrong-password and
+        // wrong-code alike.
+        if (err && err.response && err.response.status === 422) {
+          const body = err.response.data && err.response.data.data
+          if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+            const next = { password: null, code: null }
+            if (typeof body.password === 'string') {
+              next.password = body.password
+              this.manageForm.password = ''
+            }
+            if (typeof body.code === 'string') {
+              next.code = body.code
+              this.manageForm.code = ''
+            }
+            if (next.password || next.code) {
+              this.manageFormErrors = next
+              return
+            }
+          }
+        }
         this.$toast.open({ message: this.lang('Verification failed'), type: 'is-danger' })
       })
     },

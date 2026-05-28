@@ -1,3 +1,5 @@
+const path = require('path')
+
 module.exports = {
   indexPath: 'main.html',
   filenameHashing: false,
@@ -24,6 +26,15 @@ module.exports = {
       app: [
         './frontend/main.js'
       ]
+    }
+    // Resolve the `@` alias to frontend/ for the webpack build, mirroring
+    // the Jest moduleNameMapper in jest.config.js. Without this, files that
+    // import via `@/...` (e.g. frontend/utils/withStepUp.js) pass unit tests
+    // but break `vue-cli-service build`. Keep the two in lockstep.
+    config.resolve = config.resolve || {}
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      '@': path.resolve(__dirname, 'frontend'),
     }
   }
 }

@@ -27,9 +27,9 @@
           class="navbar-item folder-switcher"
           :disabled="switching"
         >
-          <a slot="trigger" role="button" class="folder-switcher-trigger">
+          <a slot="trigger" role="button" class="folder-switcher-trigger" data-test="folder-switcher">
             <b-icon icon="folder-open" size="is-small" />
-            <span style="margin: 0 0.4em">
+            <span style="margin: 0 0.4em" data-test="current-folder">
               {{ activeFolderLabel }}
             </span>
             <b-icon icon="caret-down" size="is-small" />
@@ -42,18 +42,19 @@
             v-for="path in $store.state.user.homedirs"
             :key="path"
             :class="{ 'is-active': path === $store.state.user.active_homedir }"
+            data-test="folder-switcher-item"
             @click="switchFolder(path)"
           >
             <code style="font-size: 0.9em">{{ path }}</code>
           </b-dropdown-item>
         </b-dropdown>
-        <a v-if="is('guest')" class="navbar-item login" @click="login">
+        <a v-if="is('guest')" class="navbar-item login" data-test="login-nav" @click="login">
           {{ lang('Login') }}
         </a>
-        <a v-if="!is('guest')" class="navbar-item profile" @click="$router.push('/security').catch(() => {})">
+        <a v-if="!is('guest')" class="navbar-item profile" data-test="user-menu" @click="$router.push('/security').catch(() => {})">
           {{ this.$store.state.user.name }}
         </a>
-        <a v-if="!is('guest')" class="navbar-item logout" @click="logout">
+        <a v-if="!is('guest')" class="navbar-item logout" data-test="logout" @click="logout">
           {{ lang('Logout') }}
         </a>
       </div>

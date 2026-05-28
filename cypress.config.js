@@ -8,6 +8,12 @@ module.exports = defineConfig({
   // in v10; everything now lives under the `e2e` block with the
   // setupNodeEvents hook replacing plugins/index.js.
   video: false,
+  // Bulma's navbar collapses behind the hamburger below 1024px. The
+  // default Cypress viewport (1000x660) lands in mobile mode, which hides
+  // the navbar items (logout, folder-switcher) our specs assert on. Pin a
+  // desktop viewport so the navbar renders as a real admin sees it.
+  viewportWidth: 1280,
+  viewportHeight: 800,
   fixturesFolder: 'tests/frontend/e2e/fixtures',
   screenshotsFolder: 'tests/frontend/e2e/screenshots',
   videosFolder: 'tests/frontend/e2e/videos',

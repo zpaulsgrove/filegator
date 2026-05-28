@@ -1,0 +1,32 @@
+name: E2E
+
+on: [push, pull_request]
+
+jobs:
+  cypress:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@8358ee0e2e8afe63c2fb8253d1d52085811ab1e5 # v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, zip, sqlite3, filter
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction
+
+      # cypress-io/github-action installs npm deps, caches the Cypress
+      # binary, and provides the Linux libs Cypress needs. `command`
+      # overrides the default `cypress run` with our orchestrated script:
+      # pretest:e2e builds the SPA (so data-test selectors exist in dist),
+      # with-e2e-config.js swaps in the seam config, start-server-and-test
+      # boots `php -S` and runs the specs headless.
+      - name: Run E2E suite
+        uses: cypress-io/github-action@v6
+        with:
+          node-version: 20
+          command: npm run test:e2e

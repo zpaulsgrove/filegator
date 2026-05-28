@@ -179,7 +179,7 @@ Signed: ______________________  Date: _______________
 
 **Operator audit inbox** is whatever address is set in `configuration.php`'s `Filegator\Services\Audit\AuditMailer` block → `recipient`. On staging this typically points to the staff alias.
 
-**Step-up bypass for testers without MFA.** If the tester is an admin who has intentionally not enrolled in MFA, section C's step-up prompts won't fire (the trait degrades to no-op when admin has no MFA). Skip C and have them note in "Anything weird?".
+**Step-up dialog UX for testers without MFA.** The dialog always opens regardless of MFA state. When the acting admin has no MFA enrolled, the dialog shows the password field only (no code field, no backup-code toggle). The tester still has to type their password to confirm sensitive actions — this is the new re-auth defense against stolen-session attacks. If the tester insists they should NOT see the dialog at all, that's a regression and worth flagging in "Anything weird?".
 
 **Encryption-key file.** This deploy creates `private/mfa_encryption.key` on first MFA enrollment or first login by an existing MFA user. Mode `0600`. **Back it up alongside `users.json`** — losing one without the other makes every enrolled TOTP secret unrecoverable. Document this in your runbook before promoting to production.
 

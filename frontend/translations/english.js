@@ -85,6 +85,23 @@ const data = {
   'Show hidden': 'Show hidden',
   'Show symbolic format': 'Show symbolic format',
   'Hide symbolic format': 'Hide symbolic format',
+  // Step-up dialog (admin CRUD + reset_mfa)
+  'Your password': 'Your password',
+  '6-digit code': '6-digit code',
+  'Backup code': 'Backup code',
+  'Use a backup code instead': 'Use a backup code instead',
+  'Use authenticator code': 'Use authenticator code',
+  'Invalid code': 'Invalid code',
+  'Enter your password to confirm.': 'Enter your password to confirm.',
+  'Enter your password and a current 6-digit code or backup code to confirm.': 'Enter your password and a current 6-digit code or backup code to confirm.',
+  'Too many attempts. Try again in a few minutes.': 'Too many attempts. Try again in a few minutes.',
+  'Delete user {0}': 'Delete user {0}',
+  'Update user {0}': 'Update user {0}',
+  'Create user {0}': 'Create user {0}',
+  'Reset MFA for {0}': 'Reset MFA for {0}',
+  'This permanently removes the user and all their session state.': 'This permanently removes the user and all their session state.',
+  'This resets MFA for the user. They will need to re-enroll on their next login.': 'This resets MFA for the user. They will need to re-enroll on their next login.',
+  'MFA reset': 'MFA reset',
 }
 
 export default data

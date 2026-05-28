@@ -17,12 +17,14 @@
           </p>
         </div>
 
-        <div v-else>
+        <div v-else data-test="folder-picker">
           <button
             v-for="path in folders"
             :key="path"
             type="button"
             class="button is-fullwidth is-primary is-light folder-button"
+            data-test="folder-button"
+            :data-test-path="path"
             :disabled="busy"
             @click="pick(path)"
           >

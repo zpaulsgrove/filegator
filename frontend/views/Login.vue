@@ -14,10 +14,10 @@
             </div>
             <br>
             <b-field :label="lang('Username')">
-              <b-input v-model="username" name="username" required @input="error = ''" ref="username" />
+              <b-input v-model="username" name="username" required @input="error = ''" ref="username" data-test="login-username" />
             </b-field>
             <b-field :label="lang('Password')">
-              <b-input v-model="password" type="password" name="password" required @input="error = ''" password-reveal />
+              <b-input v-model="password" type="password" name="password" required @input="error = ''" password-reveal data-test="login-password" />
             </b-field>
 
             <div class="login-actions">
@@ -29,12 +29,12 @@
                   {{ lang('Forgot password?') }}
                 </button>
               </div>
-              <button class="button is-primary">
+              <button class="button is-primary" data-test="login-submit">
                 {{ lang('Login') }}
               </button>
             </div>
 
-            <div v-if="error" class="login-error">
+            <div v-if="error" class="login-error" data-test="login-error">
               <code>{{ error }}</code>
             </div>
           </div>
@@ -69,22 +69,23 @@
                 @input="onMfaInput"
                 ref="mfa"
                 key="mfa-input"
+                data-test="login-mfa-code"
               />
             </b-field>
             <div class="login-actions">
-              <a @click="toggleBackup" class="login-link">
+              <a @click="toggleBackup" class="login-link" data-test="login-mfa-backup-toggle">
                 {{ useBackup ? lang('Use authenticator code') : lang('Use a backup code') }}
               </a>
               <div class="buttons" style="margin-bottom: 0">
                 <button class="button" type="button" @click="cancel">
                   {{ lang('Cancel') }}
                 </button>
-                <button class="button is-primary">
+                <button class="button is-primary" data-test="login-mfa-submit">
                   {{ lang('Verify') }}
                 </button>
               </div>
             </div>
-            <div v-if="error" class="login-error">
+            <div v-if="error" class="login-error" data-test="login-error">
               <code>{{ error }}</code>
             </div>
           </div>
@@ -128,7 +129,7 @@
                 {{ lang('Verify and continue') }}
               </button>
             </div>
-            <div v-if="error" class="login-error">
+            <div v-if="error" class="login-error" data-test="login-error">
               <code>{{ error }}</code>
             </div>
 

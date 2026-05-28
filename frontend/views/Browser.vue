@@ -45,14 +45,14 @@
             </b-field>
             <a v-if="can(['read', 'write']) && ! checked.length" class="add-new is-inline-block">
               <b-dropdown :disabled="checked.length > 0" aria-role="list">
-                <span slot="trigger">
+                <span slot="trigger" data-test="new-menu">
                   <b-icon icon="plus" size="is-small" /> {{ lang('New') }}
                 </span>
 
-                <b-dropdown-item aria-role="listitem" @click="create('dir')">
+                <b-dropdown-item aria-role="listitem" data-test="create-folder" @click="create('dir')">
                   <b-icon icon="folder" size="is-small" /> {{ lang('Folder') }}
                 </b-dropdown-item>
-                <b-dropdown-item aria-role="listitem" @click="create('file')">
+                <b-dropdown-item aria-role="listitem" data-test="create-file" @click="create('file')">
                   <b-icon icon="file" size="is-small" /> {{ lang('File') }}
                 </b-dropdown-item>
 
@@ -70,7 +70,7 @@
             <a v-if="can(['write', 'zip']) && checked.length" class="is-inline-block" @click="zip">
               <b-icon icon="file-archive" size="is-small" /> {{ lang('Zip') }}
             </a>
-            <a v-if="can('write') && checked.length" class="is-inline-block" @click="remove">
+            <a v-if="can('write') && checked.length" class="is-inline-block" data-test="delete-selected" @click="remove">
               <b-icon icon="trash-alt" size="is-small" /> {{ lang('Delete') }}
             </a>
           </div>
@@ -116,7 +116,7 @@
 
             <b-table-column id="single-actions" width="51">
               <b-dropdown v-if="props.row.type != 'back'" :disabled="checked.length > 0" aria-role="list" position="is-bottom-left">
-                <button :ref="'ref-single-action-button-'+props.row.path" slot="trigger" class="button is-small">
+                <button :ref="'ref-single-action-button-'+props.row.path" slot="trigger" class="button is-small" data-test="row-menu">
                   <b-icon icon="ellipsis-h" size="is-small" />
                 </button>
 
@@ -132,7 +132,7 @@
                 <b-dropdown-item v-if="can('write')" aria-role="listitem" @click="move($event, props.row)">
                   <b-icon icon="external-link-square-alt" size="is-small" /> {{ lang('Move') }}
                 </b-dropdown-item>
-                <b-dropdown-item v-if="can('write')" aria-role="listitem" @click="rename($event, props.row)">
+                <b-dropdown-item v-if="can('write')" aria-role="listitem" data-test="row-rename" @click="rename($event, props.row)">
                   <b-icon icon="file-signature" size="is-small" /> {{ lang('Rename') }}
                 </b-dropdown-item>
                 <b-dropdown-item v-if="can(['write', 'zip']) && isArchive(props.row)" aria-role="listitem" @click="unzip($event, props.row)">
@@ -144,7 +144,7 @@
                 <b-dropdown-item v-if="can(['write', 'chmod']) && props.row.permissions !== -1" aria-role="listitem" @click="chmod($event, props.row)">
                   <b-icon icon="lock" size="is-small" /> {{ lang('Permissions') }} ({{ props.row.permissions }})
                 </b-dropdown-item>
-                <b-dropdown-item v-if="can('write')" aria-role="listitem" @click="remove($event, props.row)">
+                <b-dropdown-item v-if="can('write')" aria-role="listitem" data-test="row-delete" @click="remove($event, props.row)">
                   <b-icon icon="trash-alt" size="is-small" /> {{ lang('Delete') }}
                 </b-dropdown-item>
                 <b-dropdown-item v-if="props.row.type == 'file' && can('download')" v-clipboard:copy="getDownloadLink(props.row.path)" aria-role="listitem">

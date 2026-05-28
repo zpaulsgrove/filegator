@@ -23,30 +23,38 @@ describe('Multi-folder homedirs', () => {
       name: 'Jane Doe',
       role: 'user',
       homedirs: ['/projects', '/personal'],
-      permissions: 'read|write|upload|download',
+      permissions: ['read', 'write', 'upload', 'download'],
     })
 
-    // 2. Switch to Jane's session (admin logs out via API to keep teardown tight).
-    cy.request({ method: 'POST', url: '/?r=/logout' })
+    // 2. Switch to Jane's session (admin logs out via API to keep teardown
+    //    tight). CSRF is ON, so go through the round-trip helper.
+    cy.apiPost('/logout')
     cy.visit('/')
 
     cy.get('[data-test="login-username"]').type('jane')
     cy.get('[data-test="login-password"]').type('jane12345')
     cy.get('[data-test="login-submit"]').click()
 
-    // 3. Folder switcher dropdown should be visible in the top menu with
-    //    both folders listed.
+    // 3. A multi-folder user with no active selection is routed to the
+    //    folder picker first (router needsFolderPicker guard). Both folders
+    //    are offered; choose /projects to enter the browser.
+    cy.get('[data-test="folder-picker"]').should('be.visible')
+    cy.get('[data-test="folder-button"]').should('have.length', 2)
+    cy.get('[data-test="folder-button"][data-test-path="/projects"]').click()
+
+    // 4. Inside the browser, the navbar folder switcher is now visible and
+    //    lists both folders.
     cy.get('[data-test="folder-switcher"]').should('be.visible').click()
     cy.get('[data-test="folder-switcher-item"]').should('have.length', 2)
     cy.get('[data-test="folder-switcher-item"]').eq(0).should('contain.text', 'projects')
     cy.get('[data-test="folder-switcher-item"]').eq(1).should('contain.text', 'personal')
 
-    // 4. Switch to /personal — the breadcrumb / current-folder indicator
-    //    must update to reflect the new root.
+    // 5. Switch to /personal — the current-folder indicator must update to
+    //    reflect the new root.
     cy.get('[data-test="folder-switcher-item"]').eq(1).click()
     cy.get('[data-test="current-folder"]').should('contain.text', 'personal')
 
-    // 5. Reload — the active folder selection persists (server-side state
+    // 6. Reload — the active folder selection persists (server-side state
     //    via /changedir is the source of truth; verify it round-trips).
     cy.reload()
     cy.get('[data-test="current-folder"]').should('contain.text', 'personal')

@@ -137,10 +137,10 @@
             />
           </section>
           <footer class="modal-card-foot">
-            <button class="button" @click="manageOpen = false">
+            <button class="button" @click="manageOpen = false" :disabled="managing">
               {{ lang('Cancel') }}
             </button>
-            <button class="button is-primary" @click="performManage">
+            <button class="button is-primary" @click="performManage" :disabled="managing" :class="{ 'is-loading': managing }">
               {{ lang('Continue') }}
             </button>
           </footer>
@@ -174,6 +174,9 @@ export default {
       manageMode: 'disable',
       manageForm: { password: '', code: '', useBackup: false },
       manageFormErrors: { password: null, code: null },
+      // R-2: in-flight guard so users can't spam Confirm into a per-IP 429.
+      // Mirrors the `submitting` flag on StepUpDialog.
+      managing: false,
     }
   },
   mounted() {
@@ -252,8 +255,14 @@ export default {
       this.manageOpen = true
       this.manageForm = { password: '', code: '', useBackup: false }
       this.manageFormErrors = { password: null, code: null }
+      this.managing = false
     },
     performManage() {
+      // R-2 in-flight guard. Without this, the user can spam the Confirm
+      // button on a slow connection and rack up failed attempts against the
+      // per-IP lockout budget.
+      if (this.managing) return
+      this.managing = true
       const args = {
         password: this.manageForm.password,
         code: this.manageForm.code,
@@ -296,6 +305,8 @@ export default {
           }
         }
         this.$toast.open({ message: this.lang('Verification failed'), type: 'is-danger' })
+      }).finally(() => {
+        this.managing = false
       })
     },
   },

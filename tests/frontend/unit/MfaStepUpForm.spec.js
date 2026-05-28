@@ -89,7 +89,12 @@ describe('MfaStepUpForm.vue', () => {
     expect(lastCall).toEqual({ password: '', code: '123456', useBackup: false })
   })
 
-  it('uppercases code input when useBackup=true', () => {
+  // R-4: per-keystroke JS toUpperCase used to force Vue to re-write the input
+  // DOM, moving the cursor to the end on mid-string edits. We now rely on
+  // CSS text-transform: uppercase for the visual and let the backend
+  // normalise case at verify time. The emitted value is whatever the user
+  // typed.
+  it('passes backup-code input through verbatim (CSS handles uppercase display)', () => {
     const wrapper = mountForm({
       value: { password: '', code: '', useBackup: true },
       showCode: true,
@@ -100,10 +105,10 @@ describe('MfaStepUpForm.vue', () => {
     const emitted = wrapper.emitted('input')
     expect(emitted).toBeTruthy()
     const lastCall = emitted[emitted.length - 1][0]
-    expect(lastCall.code).toBe('ABCDE-12345')
+    expect(lastCall.code).toBe('abcde-12345')
   })
 
-  it('does not uppercase code input when useBackup=false', () => {
+  it('does not transform code input when useBackup=false', () => {
     const wrapper = mountForm({
       value: { password: '', code: '', useBackup: false },
       showCode: true,

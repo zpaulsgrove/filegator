@@ -263,12 +263,20 @@ class AuthController
      * implement MfaCapableInterface (LDAP, WPAuth, etc.) the field is
      * omitted — callers that depend on it must handle its absence.
      */
-    protected function userResponsePayload($user, SessionStorageInterface $session, AuthInterface $auth = null): array
+    protected function userResponsePayload($user, SessionStorageInterface $session, AuthInterface $auth): array
     {
         $payload = $user->jsonSerialize();
         $payload['active_homedir'] = $session->get(FileController::SESSION_ACTIVE_HOMEDIR, null);
         if ($auth instanceof MfaCapableInterface) {
-            $payload['mfa_enabled'] = (bool) ($auth->getMfaState($user->getUsername())['enabled'] ?? false);
+            try {
+                $payload['mfa_enabled'] = (bool) ($auth->getMfaState($user->getUsername())['enabled'] ?? false);
+            } catch (\Throwable $e) {
+                // Storage I/O failure (e.g., users.json read race). Log and
+                // omit the field — /getuser must keep working when MFA
+                // state can't be read. Mirrors the try/catch pattern in
+                // login() at lines 73-78.
+                $this->logger->log("getMfaState failed in userResponsePayload for {$user->getUsername()}: ".$e->getMessage());
+            }
         }
         return $payload;
     }

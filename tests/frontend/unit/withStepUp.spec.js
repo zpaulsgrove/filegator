@@ -1,7 +1,7 @@
 jest.mock('@/api/api', () => ({ __esModule: true, default: { getUser: jest.fn().mockResolvedValue({}) } }))
 
 import api from '@/api/api'
-import withStepUp, { STEP_UP_CANCELLED, isStepUpCancelled, _resetRefreshCache } from '@/utils/withStepUp'
+import withStepUp, { isStepUpCancelled, _resetRefreshCache } from '@/utils/withStepUp'
 import StepUpDialog from '@/views/partials/StepUpDialog.vue'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -166,7 +166,6 @@ describe('withStepUp', () => {
     await expect(promise).rejects.toMatchObject({
       message: 'Step-up cancelled',
       stepUpCancelled: true,
-      cancelToken: STEP_UP_CANCELLED,
     })
   })
 
@@ -183,7 +182,6 @@ describe('withStepUp', () => {
     const caught = await promise.catch(err => err)
     expect(caught).toBe(serverError)
     expect(caught.stepUpCancelled).toBeUndefined()
-    expect(caught.cancelToken).toBeUndefined()
   })
 
   // 10. isStepUpCancelled helper

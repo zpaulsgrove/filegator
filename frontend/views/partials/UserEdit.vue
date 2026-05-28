@@ -275,7 +275,10 @@ export default {
         .filter(h => h !== '')
 
       const payload = {
-        key: this.user.username,
+        // `key` is the URL slug for updateUser (the ORIGINAL username
+        // before any rename). storeUser ignores it; this guard keeps the
+        // payload tidy for the create flow.
+        ...(this.action == 'add' ? {} : { key: this.user.username }),
         role: this.formFields.role,
         name: this.formFields.name,
         username: this.formFields.username,
@@ -309,8 +312,12 @@ export default {
           if (isStepUpCancelled(errors)) return
           // Non-step-up 422 (dup-username, invalid email, etc.) routes
           // through the existing formErrors mapping below.
-          if (! errors || ! errors.response || typeof errors.response.data.data != 'object') {
+          if (! errors || ! errors.response || ! errors.response.data || typeof errors.response.data.data != 'object') {
+            // Non-axios error (network, programmatic dialog error, etc.) —
+            // handleError owns the toast; the formErrors mapping below would
+            // TypeError on `errors.response.data`, so return now.
             this.handleError(errors)
+            return
           }
           _.forEach(errors.response.data, err => {
             _.forEach(err, (val, key) => {

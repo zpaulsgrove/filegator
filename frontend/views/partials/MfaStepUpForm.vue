@@ -78,9 +78,13 @@ export default {
       }
     },
     onCodeInput(val) {
-      // Backup codes uppercase as user types — matches Login.vue:233-239
-      const normalised = this.value.useBackup && val ? val.toUpperCase() : val
-      this.updateField('code', normalised)
+      // R-4: don't uppercase the value on every keystroke. The CSS
+      // `text-transform: uppercase` on the backup-code input gives the
+      // visual uppercase feedback, and the backend normalises case
+      // (BackupCodeGenerator::normalize uses strtoupper). Per-keystroke
+      // value mutation forced Vue to re-write the DOM input on edits,
+      // which moved the cursor to the end and broke mid-string corrections.
+      this.updateField('code', val)
     },
     toggleBackup() {
       this.$emit('input', { ...this.value, useBackup: !this.value.useBackup, code: '' })

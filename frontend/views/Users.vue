@@ -4,7 +4,7 @@
 
     <section class="actions is-flex is-justify-between">
       <div>
-        <a @click="addUser">
+        <a @click="addUser" data-test="add-user">
           <b-icon icon="plus" size="is-small" /> {{ lang('New') }}
         </a>
       </div>
@@ -30,7 +30,7 @@
         </b-table-column>
 
         <b-table-column :label="lang('Username')" field="username" sortable>
-          <a @click="editUser(props.row)">
+          <a @click="editUser(props.row)" data-test="user-edit">
             {{ props.row.username }}
           </a>
         </b-table-column>
@@ -44,7 +44,7 @@
         </b-table-column>
 
         <b-table-column>
-          <a v-if="props.row.role != 'guest'" @click="remove(props.row)">
+          <a v-if="props.row.role != 'guest'" @click="remove(props.row)" data-test="user-delete">
             <b-icon icon="trash-alt" size="is-small" />
           </a>
         </b-table-column>

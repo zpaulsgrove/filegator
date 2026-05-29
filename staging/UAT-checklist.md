@@ -31,7 +31,7 @@ There are also under-the-hood security improvements (TOTP secrets are now encryp
 Items tagged **_(automated: spec)_** run on every CI build (`tests/frontend/e2e/`) and only
 need a spot-check. Items tagged **_(manual)_** still need a human — email alerts/digests, the
 two-browser MFA-binding and two-tab race, and deep-link restoration. Section B/C admin-UI items
-are tagged **_(automated: admin-users.cy.js — PR 2)_**: automated in the follow-up PR.
+are tagged **_(automated: admin-users.cy.js)_**.
 
 ---
 
@@ -59,7 +59,7 @@ You'll need at least one user account configured with 2+ folders for this sectio
 
 ### B. Multi-folder users (admin assignment)
 
-> _(automated: admin-users.cy.js — PR 2; the UI add/remove-folder + step-up flow.)_
+> _(automated: admin-users.cy.js — the UI add-folder + step-up flow; assignment verified via /listusers.)_
 
 - [ ] Log in as an admin.
 - [ ] Open the user management screen (the gear / admin menu).
@@ -80,7 +80,7 @@ You'll need at least one user account configured with 2+ folders for this sectio
 
 ### C. Admin step-up confirmation (MFA-enrolled admins only)
 
-> _(automated: admin-users.cy.js — PR 2 (UI happy-path + wrong-password reject); the full reject-without-step-up matrix and the fat-finger "code not burned" cases are covered by backend AdminStepUpTest.)_
+> _(automated: admin-users.cy.js — UI create/edit/delete/reset-MFA happy-path + wrong-password reject; the full reject-without-step-up matrix and the fat-finger "code not burned" cases are covered by backend AdminStepUpTest.)_
 
 This whole section only applies if your admin account has MFA enabled. If you've intentionally not enrolled, skip — but flag it in the "Anything weird?" box.
 

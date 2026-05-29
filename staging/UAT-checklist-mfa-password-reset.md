@@ -62,7 +62,7 @@ and deep-link restoration.
 
 ### Admin-only
 
-- [ ] Create a new user, set their role and homedir _(automated: admin-users.cy.js — PR 2)_
+- [ ] Create a new user, set their role and homedir _(automated: admin-users.cy.js)_
 - [ ] Regenerate your MFA backup codes from your profile _(automated: mfa-manage.cy.js)_
   - [ ] Old backup codes stop working _(automated: backend MfaTest)_
   - [ ] New codes are shown immediately and survive a page refresh _(automated: mfa-manage.cy.js)_

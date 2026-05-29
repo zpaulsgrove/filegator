@@ -2,3 +2,4 @@
 /users.json
 /password_resets.json
 /mfa_encryption.key
+/audit_state.json

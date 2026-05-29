@@ -36,8 +36,9 @@ describe('Deep-link / folder restoration', () => {
     // Enter the new folder by clicking its name link.
     cy.contains('.file-row a.name', 'sub').click()
 
-    // Confirm the URL reflects the new location.
-    cy.hash().should('contain', 'cd=/sub')
+    // Confirm the URL reflects the new location. vue-router percent-encodes
+    // the slash in query values (cd=%2Fsub), so assert encoding-agnostically.
+    cy.hash().should('include', 'cd=').and('include', 'sub')
 
     // Create a file inside the subfolder.
     cy.get('[data-test="new-menu"]').click()
@@ -140,9 +141,11 @@ describe('Deep-link / folder restoration', () => {
     cy.get('.dialog').contains('button', 'Create').click()
     cy.contains('.file-row a.name', 'deep').click()
 
-    // Confirm URL encodes both the folder and the subdirectory.
-    cy.hash().should('contain', 'folder=/personal')
-    cy.hash().should('contain', 'cd=/deep')
+    // Confirm URL encodes both the folder and the subdirectory. vue-router
+    // percent-encodes the slashes (folder=%2Fpersonal&cd=%2Fdeep), so assert
+    // on the encoding-agnostic substrings.
+    cy.hash().should('include', 'folder=').and('include', 'personal')
+    cy.hash().should('include', 'cd=').and('include', 'deep')
 
     // Create a marker file inside the deep subfolder.
     cy.get('[data-test="new-menu"]').click()

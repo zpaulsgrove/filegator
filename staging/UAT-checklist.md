@@ -30,7 +30,7 @@ There are also under-the-hood security improvements (TOTP secrets are now encryp
 
 Items tagged **_(automated: spec)_** run on every CI build (`tests/frontend/e2e/`) and only
 need a spot-check. Items tagged **_(manual)_** still need a human — email alerts/digests, the
-two-browser MFA-binding and two-tab race, and deep-link restoration. Section B/C admin-UI items
+two-browser MFA-binding and two-tab race. Section B/C admin-UI items
 are tagged **_(automated: admin-users.cy.js)_**.
 
 ---
@@ -55,7 +55,7 @@ You'll need at least one user account configured with 2+ folders for this sectio
 - [ ] Copy the URL of a file or subfolder inside folder A while logged in.
 - [ ] Log out.
 - [ ] Paste the URL into the browser → you land on the login page.
-- [ ] Log in → you should arrive at the deep-linked location (folder A's subfolder), **not** the picker. Active folder follows the deep link. _(manual — **not implemented**: routeAfterLogin always lands on the folder root, not the deep link. Flag if product wants this.)_
+- [x] Log in → you should arrive at the deep-linked location (folder A's subfolder), **not** the picker. Active folder follows the deep link. _(automated: deep-link.cy.js — multi-folder cross-session `?folder=&cd=` restore)_
 
 ### B. Multi-folder users (admin assignment)
 

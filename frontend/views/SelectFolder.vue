@@ -78,7 +78,17 @@ export default {
           // Reset cwd before navigating into the browser so a stale
           // path from a previous session doesn't pre-fill.
           this.$store.commit('resetCwd')
-          this.$router.push('/').catch(() => {})
+          // Honor a deep link that survived the trip through login: drop the
+          // user into the bookmarked subfolder of the folder they just picked.
+          // Browser.vue's $route watcher loads it. Consume the stash either way.
+          const cd = this.$store.state.pendingCd
+          this.$store.commit('setPendingCd', null)
+          this.$store.commit('setPendingFolder', null)
+          if (cd) {
+            this.$router.push({ path: '/', query: { cd, folder: path } }).catch(() => {})
+          } else {
+            this.$router.push('/').catch(() => {})
+          }
         })
         .catch(error => {
           this.busy = false

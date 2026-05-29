@@ -181,6 +181,7 @@ import Pagination from './partials/Pagination'
 import Upload from './partials/Upload'
 import api from '../api/api'
 import VueClipboard from 'vue-clipboard2'
+import { needsFolderPicker } from '../mixins/postLogin'
 import _ from 'lodash'
 
 Vue.use(VueClipboard)
@@ -200,6 +201,12 @@ export default {
       hasFilteredEntries: false,
       showAllEntries: false,
       showSymbolic: false,
+      // Holds a `?cd=` value whose load is deferred until active_homedir
+      // catches up — set on mount for a cross-folder deep link that
+      // routeAfterLogin is still resolving (async selectFolder). null when
+      // nothing is pending, so the active_homedir watcher below stays inert
+      // for ordinary in-session folder switches.
+      deferredCd: null,
     }
   },
   computed: {
@@ -228,27 +235,50 @@ export default {
   },
   watch: {
     '$route' (to) {
-      this.isLoading = true
-      this.checked = []
-      this.currentPage = 1
-      api.changeDir({
-        to: to.query.cd
-      })
-        .then(ret => {
-          this.$store.commit('setCwd', {
-            content: this.filterEntries(ret.files),
-            location: ret.location,
-          })
-          this.isLoading = false
-        })
-        .catch(error => {
-          this.isLoading = false
-          this.handleError(error)
-        })
+      this.loadDir(to.query.cd)
+    },
+    // Resolve a deferred cross-folder deep link: once the homedir the link
+    // names becomes active (routeAfterLogin's async selectFolder resolved),
+    // load the stashed cd. Guarded by deferredCd so ordinary in-session
+    // folder switches (Menu.switchFolder) never trigger a duplicate load.
+    '$store.state.user.active_homedir' (active) {
+      if (this.deferredCd !== null && active && active === this.$route.query.folder) {
+        const cd = this.deferredCd
+        this.deferredCd = null
+        cd ? this.loadDir(cd) : this.loadFiles()
+      }
     },
   },
   mounted() {
-    if (this.can('read')) {
+    // Restore a `?cd=` deep link on a cold load (reload / bookmark). This
+    // works because App.vue gates the whole tree on `initialized`, so this
+    // component only mounts AFTER the bootstrap getUser resolves — meaning
+    // can('read') is accurate and $route.query.cd is available here. If that
+    // gate is ever removed, this restore would silently no-op (mount would
+    // run before the user loads) and reloads would bounce to the root again.
+    if (!this.can('read')) {
+      return
+    }
+    const user = this.$store.state.user
+    const active = user.active_homedir
+    const folder = this.$route.query.folder
+    const homedirs = Array.isArray(user.homedirs) ? user.homedirs : []
+    if (folder && folder !== active && homedirs.indexOf(folder) !== -1) {
+      // Cross-folder deep link: the named (valid) homedir isn't active yet.
+      // routeAfterLogin is switching to it via selectFolder; defer the load
+      // (its corrective navigation is a no-op duplicate of this very route,
+      // so the active_homedir watcher above is what completes the load).
+      this.deferredCd = this.$route.query.cd || ''
+      return
+    }
+    if (needsFolderPicker(user)) {
+      // Multi-folder, no active selection: the bootstrap/guard is about to
+      // move us to the picker. Don't load against a missing active folder.
+      return
+    }
+    if (this.$route.query.cd) {
+      this.loadDir(this.$route.query.cd)
+    } else {
       this.loadFiles()
     }
   },
@@ -324,8 +354,40 @@ export default {
         })
         .catch(error => this.handleError(error))
     },
+    // Load a specific directory by its homedir-relative path (the `?cd=`
+    // deep-link value). Uses changeDir, which also WRITES the session CWD
+    // so later createNew/upload land in this folder — unlike loadFiles(),
+    // which only READS the session CWD. The two are NOT interchangeable.
+    loadDir(cd) {
+      this.isLoading = true
+      this.checked = []
+      this.currentPage = 1
+      api.changeDir({
+        to: cd,
+      })
+        .then(ret => {
+          this.$store.commit('setCwd', {
+            content: this.filterEntries(ret.files),
+            location: ret.location,
+          })
+          this.isLoading = false
+        })
+        .catch(error => {
+          this.isLoading = false
+          this.handleError(error)
+        })
+    },
     goTo(path) {
-      this.$router.push({ name: 'browser', query: { 'cd': path }}).catch(() => {})
+      // Self-describing deep link: multi-folder users also encode which
+      // homedir `cd` belongs to, so a cross-session bookmark can bypass the
+      // picker (see postLogin.routeAfterLogin). Single-folder users keep
+      // clean `/#/?cd=` URLs.
+      const query = { cd: path }
+      const user = this.$store.state.user
+      if (user && Array.isArray(user.homedirs) && user.homedirs.length > 1 && user.active_homedir) {
+        query.folder = user.active_homedir
+      }
+      this.$router.push({ name: 'browser', query }).catch(() => {})
     },
     getSelected() {
       return _.reduce(this.checked, function(result, value) {

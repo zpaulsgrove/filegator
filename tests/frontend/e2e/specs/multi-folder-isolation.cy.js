@@ -6,9 +6,9 @@
 // Server-side isolation is covered by FilesTest; here it's the browser-level
 // folder-switch behavior under test.
 //
-// Deep-link-after-login restoration is intentionally NOT tested: routeAfterLogin
-// (frontend/mixins/postLogin.js) always routes to '/' or the picker and does
-// not restore a `?cd=` deep link, so that UAT item stays manual.
+// Deep-link-after-login restoration is now covered by deep-link.cy.js (single-
+// folder reload, logged-out deep link, traversal confinement, and multi-folder
+// cross-session `?folder=&cd=` restore), so it is no longer exercised here.
 
 describe('Multi-folder isolation', () => {
   beforeEach(() => {

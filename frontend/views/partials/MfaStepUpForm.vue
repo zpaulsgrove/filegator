@@ -15,6 +15,7 @@
         autocomplete="current-password"
         password-reveal
         :ref="autofocus ? 'pw' : null"
+        :data-test="testid ? testid + '-password' : null"
       />
     </b-field>
 
@@ -34,10 +35,11 @@
             ? 'font-family: monospace; font-size: 1.1em; letter-spacing: 0.05em; text-transform: uppercase'
             : 'font-family: monospace; font-size: 1.2em; letter-spacing: 0.15em'"
           autocomplete="one-time-code"
+          :data-test="testid ? testid + '-code' : null"
         />
       </b-field>
       <p class="step-up-toggle">
-        <a @click="toggleBackup">
+        <a @click="toggleBackup" :data-test="testid ? testid + '-backup-toggle' : null">
           {{ value.useBackup ? lang('Use authenticator code') : lang('Use a backup code instead') }}
         </a>
       </p>
@@ -68,6 +70,15 @@ export default {
     autofocus: {
       type: Boolean,
       default: false,
+    },
+    // When set, emits per-instance `data-test` hooks on the inner inputs and
+    // the backup toggle (`{testid}-code`, `{testid}-backup-toggle`,
+    // `{testid}-password`). The component renders in several places, so a
+    // shared id would match ambiguously; absent ⇒ no data-test (no change to
+    // existing usages). E2E-only; ignored by production behaviour.
+    testid: {
+      type: String,
+      default: '',
     },
   },
   mounted() {

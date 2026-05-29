@@ -66,10 +66,10 @@
           <p>{{ lang('MFA is enabled on your account.') }} <strong>{{ state.backup_codes_remaining }}</strong> {{ lang('backup code(s) remaining.') }}</p>
           <br>
           <div class="buttons">
-            <button class="button" @click="openManage('regenerate')">
+            <button class="button" @click="openManage('regenerate')" data-test="security-mfa-regenerate">
               {{ lang('Regenerate backup codes') }}
             </button>
-            <button class="button is-danger is-light" v-if="!state.required_by_role" @click="openManage('disable')">
+            <button class="button is-danger is-light" v-if="!state.required_by_role" @click="openManage('disable')" data-test="security-mfa-disable">
               {{ lang('Disable MFA') }}
             </button>
             <span v-else class="tag is-info is-light" style="align-self: center; margin-left: .5em">
@@ -84,17 +84,17 @@
             <canvas ref="qrCanvas" />
           </div>
           <p style="font-family: monospace; word-break: break-all; font-size: 0.9em">
-            {{ lang('Manual key') }}: {{ enrollment.secret }}
+            {{ lang('Manual key') }}: <span data-test="security-enroll-secret">{{ enrollment.secret }}</span>
           </p>
           <br>
           <b-field :label="lang('6-digit code')">
-            <b-input v-model="enrollCode" placeholder="123456" />
+            <b-input v-model="enrollCode" placeholder="123456" data-test="security-enroll-code" />
           </b-field>
           <div class="buttons is-right" style="margin-top: 1em; margin-bottom: 0">
-            <button class="button" @click="cancelEnroll">
+            <button class="button" @click="cancelEnroll" data-test="security-enroll-cancel">
               {{ lang('Cancel') }}
             </button>
-            <button class="button is-primary" @click="confirmEnroll">
+            <button class="button is-primary" @click="confirmEnroll" data-test="security-enroll-verify">
               {{ lang('Verify') }}
             </button>
           </div>
@@ -103,7 +103,7 @@
         <div v-else>
           <p>{{ lang('Add a second factor with a TOTP authenticator app.') }}</p>
           <br>
-          <button class="button is-primary" @click="beginEnroll">
+          <button class="button is-primary" @click="beginEnroll" data-test="security-enable-mfa">
             {{ lang('Enable MFA') }}
           </button>
         </div>
@@ -115,7 +115,7 @@
           being top-level, the codes would unmount before the user could read
           them.
         -->
-        <div v-if="backupCodes" class="notification is-warning" style="margin-top: 1em">
+        <div v-if="backupCodes" class="notification is-warning" style="margin-top: 1em" data-test="security-backup-codes">
           <p><strong>{{ lang('Save these backup codes') }}</strong></p>
           <p>{{ lang('Each can be used once if you lose access to your authenticator. They will not be shown again.') }}</p>
           <ul style="font-family: monospace; margin-top: 0.5em">
@@ -124,7 +124,7 @@
             </li>
           </ul>
           <div class="buttons is-right" style="margin-top: 1em; margin-bottom: 0">
-            <button class="button is-primary" @click="dismissBackupCodes">
+            <button class="button is-primary" @click="dismissBackupCodes" data-test="security-backup-codes-dismiss">
               {{ lang("I've saved them") }}
             </button>
           </div>
@@ -172,14 +172,15 @@
               v-model="manageForm"
               :show-code="true"
               :errors="manageFormErrors"
+              testid="security-manage-stepup"
               @clear-error="manageFormErrors = { ...manageFormErrors, [$event]: null }"
             />
           </section>
           <footer class="modal-card-foot">
-            <button class="button" @click="manageOpen = false" :disabled="managing">
+            <button class="button" @click="manageOpen = false" :disabled="managing" data-test="security-manage-cancel">
               {{ lang('Cancel') }}
             </button>
-            <button class="button is-primary" @click="performManage" :disabled="managing" :class="{ 'is-loading': managing }">
+            <button class="button is-primary" @click="performManage" :disabled="managing" :class="{ 'is-loading': managing }" data-test="security-manage-continue">
               {{ lang('Continue') }}
             </button>
           </footer>

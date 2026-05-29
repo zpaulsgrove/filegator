@@ -34,3 +34,17 @@ jobs:
         uses: cypress-io/github-action@v6
         with:
           command: npm run test:e2e
+
+      # Forced admin-MFA-setup runs in isolation: FILEGATOR_E2E_MFA_REQUIRED=1
+      # flips mfa_required_for_admins=true in the seam config (config is read
+      # per-request by php -S), which would break the single-step admin logins
+      # the other specs rely on — so it gets its own server boot and only runs
+      # the specs-mfa-required/ specs. Deps + Cypress binary are already
+      # installed by the step above, so install: false.
+      - name: Run E2E suite (forced MFA setup)
+        uses: cypress-io/github-action@v6
+        with:
+          install: false
+          command: npm run test:e2e:mfa-required
+        env:
+          FILEGATOR_E2E_MFA_REQUIRED: '1'

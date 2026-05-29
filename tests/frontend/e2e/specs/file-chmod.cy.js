@@ -29,7 +29,12 @@ describe('File permissions (chmod)', () => {
       cy.get('[data-test="row-permissions"]').click({ force: true })
     })
 
-    cy.get('[data-test="perm-octal"]').clear().type('750')
+    // The octal field is a controlled b-input (value is re-derived as
+    // String(newPermissions).padStart(3,'0') with maxlength=4, @input does
+    // parseInt(v.slice(-3))). Per-keystroke typing fights that binding (a
+    // cleared field renders "NaN" and truncates), so set the value atomically
+    // and fire a single input event.
+    cy.get('[data-test="perm-octal"]').invoke('val', '750').trigger('input')
     cy.get('[data-test="perm-save"]').click()
 
     cy.contains('.file-row', 'perm.txt').should('contain.text', '750')

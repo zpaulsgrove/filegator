@@ -9,7 +9,7 @@
     "pretest:e2e": "npm run build",
     "test:e2e": "node tests/frontend/e2e/support/with-e2e-config.js start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run'",
     "pretest:e2e:mfa-required": "npm run build",
-    "test:e2e:mfa-required": "node tests/frontend/e2e/support/with-e2e-config.js start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run --spec tests/frontend/e2e/specs-mfa-required/**/*.cy.js'",
+    "test:e2e:mfa-required": "node tests/frontend/e2e/support/with-e2e-config.js start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run'",
     "pretest:e2e:headed": "npm run build",
     "test:e2e:headed": "node tests/frontend/e2e/support/with-e2e-config.js start-server-and-test 'php -S 0.0.0.0:8081' http://localhost:8081 'cypress run --headed'",
     "lint": "vue-cli-service lint --no-fix frontend/",

@@ -9,7 +9,7 @@
       <form @submit.prevent="save">
         <div v-if="user.role == 'user' || user.role == 'admin'" class="field">
           <b-field :label="lang('Role')">
-            <b-select v-model="formFields.role" :placeholder="lang('Role')" expanded required>
+            <b-select v-model="formFields.role" :placeholder="lang('Role')" expanded required data-test="user-role">
               <option key="user" value="user">
                 {{ lang('User') }}
               </option>
@@ -20,24 +20,24 @@
           </b-field>
 
           <b-field :label="lang('Username')" :type="formErrors.username ? 'is-danger' : ''" :message="formErrors.username">
-            <b-input v-model="formFields.username" @keydown.native="formErrors.username = ''" />
+            <b-input v-model="formFields.username" @keydown.native="formErrors.username = ''" data-test="user-username" />
           </b-field>
 
           <b-field :label="lang('Name')" :type="formErrors.name ? 'is-danger' : ''" :message="formErrors.name">
-            <b-input v-model="formFields.name" @keydown.native="formErrors.name = ''" />
+            <b-input v-model="formFields.name" @keydown.native="formErrors.name = ''" data-test="user-name" />
           </b-field>
 
           <b-field :label="lang('Email')" :type="formErrors.email ? 'is-danger' : ''" :message="formErrors.email">
-            <b-input v-model="formFields.email" type="email" @keydown.native="formErrors.email = ''" />
+            <b-input v-model="formFields.email" type="email" @keydown.native="formErrors.email = ''" data-test="user-email" />
           </b-field>
 
           <b-field :label="lang('Password')" :type="formErrors.password ? 'is-danger' : ''" :message="formErrors.password">
-            <b-input v-model="formFields.password" :placeholder="action == 'edit' ? lang('Leave blank for no change') : ''" password-reveal @keydown.native="formErrors.password = ''" />
+            <b-input v-model="formFields.password" :placeholder="action == 'edit' ? lang('Leave blank for no change') : ''" password-reveal @keydown.native="formErrors.password = ''" data-test="user-password" />
           </b-field>
 
           <div v-if="action == 'edit' && user.mfa_enabled" class="field">
             <span class="tag is-info is-light">{{ lang('MFA enabled') }}</span>
-            <button type="button" class="button is-small is-danger is-light" style="margin-left: 0.5em" @click="resetMfa">
+            <button type="button" class="button is-small is-danger is-light" style="margin-left: 0.5em" @click="resetMfa" data-test="user-reset-mfa">
               {{ lang('Reset MFA') }}
             </button>
           </div>
@@ -55,12 +55,14 @@
                 expanded
                 @focus="() => selectDir(idx)"
                 @input="formErrors.homedir = ''"
+                :data-test="'user-folder-' + idx"
               />
               <p v-if="formFields.homedirs.length > 1" class="control">
                 <button
                   type="button"
                   class="button is-danger"
                   :title="lang('Remove this folder')"
+                  :data-test="'user-remove-folder-' + idx"
                   @click="removeFolder(idx)"
                 >×</button>
               </p>
@@ -68,6 +70,7 @@
             <button
               type="button"
               class="button is-small is-info is-light add-folder-btn"
+              data-test="add-folder"
               @click="addFolder"
             >
               + {{ lang('Add another folder') }}
@@ -77,25 +80,25 @@
 
         <b-field :label="lang('Permissions')">
           <div class="block">
-            <b-checkbox v-model="permissions.read">
+            <b-checkbox v-model="permissions.read" data-test="user-perm-read">
               {{ lang('Read') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.write">
+            <b-checkbox v-model="permissions.write" data-test="user-perm-write">
               {{ lang('Write') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.upload">
+            <b-checkbox v-model="permissions.upload" data-test="user-perm-upload">
               {{ lang('Upload') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.download">
+            <b-checkbox v-model="permissions.download" data-test="user-perm-download">
               {{ lang('Download permission') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.batchdownload">
+            <b-checkbox v-model="permissions.batchdownload" data-test="user-perm-batchdownload">
               {{ lang('Batch Download') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.zip">
+            <b-checkbox v-model="permissions.zip" data-test="user-perm-zip">
               {{ lang('Zip') }}
             </b-checkbox>
-            <b-checkbox v-model="permissions.chmod">
+            <b-checkbox v-model="permissions.chmod" data-test="user-perm-chmod">
               {{ lang('Chmod') }}
             </b-checkbox>
           </div>
@@ -103,10 +106,10 @@
       </form>
     </section>
     <footer class="modal-card-foot">
-      <button class="button" type="button" @click="$parent.close()">
+      <button class="button" type="button" @click="$parent.close()" data-test="user-cancel">
         {{ lang('Close') }}
       </button>
-      <button class="button is-primary" type="button" @click="confirmSave">
+      <button class="button is-primary" type="button" @click="confirmSave" data-test="user-save">
         {{ lang('Save') }}
       </button>
     </footer>

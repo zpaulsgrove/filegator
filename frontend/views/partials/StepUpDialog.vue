@@ -49,11 +49,12 @@
         :show-code="mfaEnabled"
         :errors="errors"
         :autofocus="true"
+        testid="stepup"
         @clear-error="onClearError"
       />
     </section>
     <footer class="modal-card-foot" style="justify-content: flex-end">
-      <button class="button" type="button" @click="cancel" :disabled="submitting">
+      <button class="button" type="button" @click="cancel" :disabled="submitting" data-test="stepup-cancel">
         {{ lang('Cancel') }}
       </button>
       <button
@@ -62,6 +63,7 @@
         @click="confirm"
         :disabled="submitting || lockedOut || !canSubmit"
         :class="{ 'is-loading': submitting }"
+        data-test="stepup-confirm"
       >
         {{ lang('Confirm') }}
       </button>

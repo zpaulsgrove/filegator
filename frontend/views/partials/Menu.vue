@@ -17,7 +17,7 @@
         <a v-if="is('admin')" class="navbar-item files" @click="$router.push('/').catch(() => {})">
           {{ lang('Files') }}
         </a>
-        <a v-if="is('admin')" class="navbar-item users" @click="$router.push('/users').catch(() => {})">
+        <a v-if="is('admin')" class="navbar-item users" data-test="nav-users" @click="$router.push('/users').catch(() => {})">
           {{ lang('Users') }}
         </a>
         <!-- Folder switcher: visible only for multi-folder users. -->

@@ -85,6 +85,17 @@ Cypress.Commands.add('adminCreateUser', (params) => {
 })
 
 /**
+ * Check a file row's selection checkbox by entry name.
+ *
+ * The Browser toolbar actions (Copy/Move/Zip/Download) only render once rows
+ * are checked. Buefy renders an identical checkbox per row, so scope to the
+ * row and force past the cell overlay.
+ */
+Cypress.Commands.add('selectRow', (name) => {
+  cy.contains('.file-row', name).find('input[type="checkbox"]').check({ force: true })
+})
+
+/**
  * Generate the current TOTP for a base32 secret using the backend's own
  * OTPHP library via a tiny standalone PHP helper (tests/.../support/totp.php).
  * Exact algorithm parity with the server, no JS crypto dependency. Yields

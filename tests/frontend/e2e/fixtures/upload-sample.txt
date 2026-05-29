@@ -1,0 +1,1 @@
+FileGator E2E upload fixture — used by file-upload.cy.js.

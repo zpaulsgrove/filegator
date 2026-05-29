@@ -5,7 +5,7 @@
     </b-button>
     &nbsp;
     <!-- eslint-disable-next-line -->
-    <a @click="$emit('selected', node)">{{ node.name }}</a>
+    <a data-test="tree-node" @click="$emit('selected', node)">{{ node.name }}</a>
 
     <ul v-if="node.children && node.children.length">
       <TreeNode v-for="(child, index) in node.children" :key="index" :node="child" @selected="$emit('selected', $event)" />

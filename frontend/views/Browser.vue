@@ -58,16 +58,16 @@
 
               </b-dropdown>
             </a>
-            <a v-if="can('batchdownload') && checked.length" class="is-inline-block" @click="batchDownload">
+            <a v-if="can('batchdownload') && checked.length" class="is-inline-block" data-test="batch-download" @click="batchDownload">
               <b-icon icon="download" size="is-small" /> {{ lang('Download') }}
             </a>
-            <a v-if="can('write') && checked.length" class="is-inline-block" @click="copy">
+            <a v-if="can('write') && checked.length" class="is-inline-block" data-test="copy-selected" @click="copy">
               <b-icon icon="copy" size="is-small" /> {{ lang('Copy') }}
             </a>
-            <a v-if="can('write') && checked.length" class="is-inline-block" @click="move">
+            <a v-if="can('write') && checked.length" class="is-inline-block" data-test="move-selected" @click="move">
               <b-icon icon="external-link-square-alt" size="is-small" /> {{ lang('Move') }}
             </a>
-            <a v-if="can(['write', 'zip']) && checked.length" class="is-inline-block" @click="zip">
+            <a v-if="can(['write', 'zip']) && checked.length" class="is-inline-block" data-test="zip-selected" @click="zip">
               <b-icon icon="file-archive" size="is-small" /> {{ lang('Zip') }}
             </a>
             <a v-if="can('write') && checked.length" class="is-inline-block" data-test="delete-selected" @click="remove">
@@ -123,7 +123,7 @@
                 <b-dropdown-item v-if="props.row.type == 'file' && can('download')" aria-role="listitem" @click="download(props.row)">
                   <b-icon icon="download" size="is-small" /> {{ lang('Download') }}
                 </b-dropdown-item>
-                <b-dropdown-item v-if="props.row.type == 'file' && can(['download']) && hasPreview(props.row.path)" aria-role="listitem" @click="preview(props.row)">
+                <b-dropdown-item v-if="props.row.type == 'file' && can(['download']) && hasPreview(props.row.path)" aria-role="listitem" data-test="row-view" @click="preview(props.row)">
                   <b-icon icon="file-alt" size="is-small" /> {{ lang('View') }}
                 </b-dropdown-item>
                 <b-dropdown-item v-if="can('write')" aria-role="listitem" @click="copy($event, props.row)">
@@ -135,13 +135,13 @@
                 <b-dropdown-item v-if="can('write')" aria-role="listitem" data-test="row-rename" @click="rename($event, props.row)">
                   <b-icon icon="file-signature" size="is-small" /> {{ lang('Rename') }}
                 </b-dropdown-item>
-                <b-dropdown-item v-if="can(['write', 'zip']) && isArchive(props.row)" aria-role="listitem" @click="unzip($event, props.row)">
+                <b-dropdown-item v-if="can(['write', 'zip']) && isArchive(props.row)" aria-role="listitem" data-test="row-unzip" @click="unzip($event, props.row)">
                   <b-icon icon="file-archive" size="is-small" /> {{ lang('Unzip') }}
                 </b-dropdown-item>
                 <b-dropdown-item v-if="can(['write', 'zip']) && ! isArchive(props.row)" aria-role="listitem" @click="zip($event, props.row)">
                   <b-icon icon="file-archive" size="is-small" /> {{ lang('Zip') }}
                 </b-dropdown-item>
-                <b-dropdown-item v-if="can(['write', 'chmod']) && props.row.permissions !== -1" aria-role="listitem" @click="chmod($event, props.row)">
+                <b-dropdown-item v-if="can(['write', 'chmod']) && props.row.permissions !== -1" aria-role="listitem" data-test="row-permissions" @click="chmod($event, props.row)">
                   <b-icon icon="lock" size="is-small" /> {{ lang('Permissions') }} ({{ props.row.permissions }})
                 </b-dropdown-item>
                 <b-dropdown-item v-if="can('write')" aria-role="listitem" data-test="row-delete" @click="remove($event, props.row)">

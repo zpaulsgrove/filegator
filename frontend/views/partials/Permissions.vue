@@ -27,6 +27,7 @@
               @input="v => newPermissions = parseInt(v.slice(-3))"
               maxlength="4"
               required
+              data-test="perm-octal"
             />
           </b-field>
         </div>
@@ -59,7 +60,7 @@
       <button class="button" type="button" @click="$parent.close()">
         {{ lang('Cancel') }}
       </button>
-      <button class="button is-primary" type="button" @click="$emit('saved', newPermissions, recursive) && $parent.close()">
+      <button class="button is-primary" type="button" data-test="perm-save" @click="$emit('saved', newPermissions, recursive) && $parent.close()">
         {{ lang('Save') }}
       </button>
     </footer>

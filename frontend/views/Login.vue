@@ -77,7 +77,7 @@
                 {{ useBackup ? lang('Use authenticator code') : lang('Use a backup code') }}
               </a>
               <div class="buttons" style="margin-bottom: 0">
-                <button class="button" type="button" @click="cancel">
+                <button class="button" type="button" @click="cancel" data-test="login-mfa-cancel">
                   {{ lang('Cancel') }}
                 </button>
                 <button class="button is-primary" data-test="login-mfa-submit">
@@ -106,7 +106,7 @@
               <canvas ref="qrCanvas" />
             </div>
             <p style="font-family: monospace; word-break: break-all; font-size: 0.9em; margin-top: 0.5em">
-              {{ lang('Manual key') }}: {{ enrollment.secret }}
+              {{ lang('Manual key') }}: <span data-test="login-mfa-setup-secret">{{ enrollment.secret }}</span>
             </p>
             <br>
             <b-field :label="lang('6-digit code')">
@@ -119,13 +119,14 @@
                 autocomplete="one-time-code"
                 @input="error = ''"
                 key="mfa-setup-input"
+                data-test="login-mfa-setup-code"
               />
             </b-field>
             <div class="buttons is-right" style="margin-top: 1.25em; margin-bottom: 0">
-              <button class="button" type="button" @click="cancel">
+              <button class="button" type="button" @click="cancel" data-test="login-mfa-setup-cancel">
                 {{ lang('Cancel') }}
               </button>
-              <button class="button is-primary">
+              <button class="button is-primary" data-test="login-mfa-setup-submit">
                 {{ lang('Verify and continue') }}
               </button>
             </div>
@@ -133,7 +134,7 @@
               <code>{{ error }}</code>
             </div>
 
-            <div v-if="setupBackupCodes" class="notification is-warning" style="margin-top: 1em">
+            <div v-if="setupBackupCodes" class="notification is-warning" style="margin-top: 1em" data-test="login-mfa-setup-backup-codes">
               <p><strong>{{ lang('Save these backup codes') }}</strong></p>
               <p>{{ lang('Each can be used once if you lose access to your authenticator. They will not be shown again.') }}</p>
               <ul style="font-family: monospace; margin-top: 0.5em">
@@ -142,7 +143,7 @@
                 </li>
               </ul>
               <div class="buttons is-right" style="margin-top: 1em; margin-bottom: 0">
-                <button class="button is-primary" type="button" @click="finishSetup">
+                <button class="button is-primary" type="button" @click="finishSetup" data-test="login-mfa-setup-finish">
                   {{ lang('Continue') }}
                 </button>
               </div>

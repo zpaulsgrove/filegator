@@ -13,11 +13,11 @@
           <p style="margin-top: 0.75em">{{ lang('If you do not receive the email within a few minutes, check your spam folder or contact us for help.') }}</p>
           <br>
           <b-field :label="lang('Email')">
-            <b-input v-model="email" type="email" name="email" autocomplete="email" required ref="email" />
+            <b-input v-model="email" type="email" name="email" autocomplete="email" required ref="email" data-test="forgot-email" />
           </b-field>
           <div class="login-actions">
             <button type="button" @click="$router.push('/login').catch(() => {})" class="login-link">{{ lang('Back to login') }}</button>
-            <button class="button is-primary">
+            <button class="button is-primary" data-test="forgot-submit">
               {{ lang('Send reset link') }}
             </button>
           </div>
@@ -33,7 +33,7 @@
         </p>
       </div>
 
-      <div class="box" v-if="sent" style="max-width: 480px">
+      <div class="box" v-if="sent" style="max-width: 480px" data-test="forgot-sent">
         <h3 class="is-size-5">
           {{ lang('Check your inbox') }}
         </h3>

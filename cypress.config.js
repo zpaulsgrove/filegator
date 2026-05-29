@@ -21,7 +21,14 @@ module.exports = defineConfig({
 
   e2e: {
     baseUrl: 'http://localhost:8081',
-    specPattern: 'tests/frontend/e2e/specs/**/*.cy.{js,jsx,ts,tsx}',
+    // The forced-admin-MFA-setup run sets FILEGATOR_E2E_MFA_REQUIRED=1 and
+    // exercises only specs-mfa-required/ (which lives outside specs/ so the
+    // default run never picks it up). Selecting specs here — rather than via a
+    // CLI --spec glob — keeps the globbing inside Cypress; a shell-passed
+    // `**` glob gets mangled by non-globstar shells and matches nothing.
+    specPattern: process.env.FILEGATOR_E2E_MFA_REQUIRED === '1'
+      ? 'tests/frontend/e2e/specs-mfa-required/**/*.cy.{js,jsx,ts,tsx}'
+      : 'tests/frontend/e2e/specs/**/*.cy.{js,jsx,ts,tsx}',
     supportFile: 'tests/frontend/e2e/support/e2e.js',
     setupNodeEvents(on, config) {
       // No custom tasks yet. Keep the hook in place — node-side helpers

@@ -21,8 +21,7 @@ You're testing three changes that will go live on the production URL once we sig
 Most of this checklist is now covered by the automated E2E suite (`tests/frontend/e2e/`).
 Items tagged **_(automated: spec)_** run on every CI build — a quick spot-check is enough.
 Items tagged **_(manual)_** can't be meaningfully automated and still need a human:
-the real authenticator-app scan, email **delivery + visual rendering**, large-file "feel",
-and deep-link restoration.
+the real authenticator-app scan, email **delivery + visual rendering**, and large-file "feel".
 
 ---
 
@@ -49,7 +48,7 @@ and deep-link restoration.
 - [ ] Move a file between folders _(automated: file-move-copy.cy.js)_
 - [ ] Delete a file (and restore from trash, if your role allows) _(automated: file-ops.cy.js)_
 - [ ] Upload a large file (>50 MB) if relevant to your workflow _(manual — large-file feel; chunking is backend-tested)_
-- [ ] Open a deep link (a saved bookmark to a specific folder) while logged out → after logging in, you should land back at that folder, not the root _(manual — deep-link restoration after login is not implemented; routeAfterLogin always lands on the folder root)_
+- [x] Open a deep link (a saved bookmark to a specific folder) while logged out → after logging in, you should land back at that folder, not the root _(automated: deep-link.cy.js)_
 
 ### Password reset round-trip
 

@@ -14,9 +14,9 @@
         <p>{{ lang('Used to recover your password if you forget it.') }}</p>
         <br>
         <b-field>
-          <b-input v-model="email" type="email" :placeholder="lang('you@example.com')" />
+          <b-input v-model="email" type="email" :placeholder="lang('you@example.com')" data-test="security-email-input" />
           <p class="control">
-            <button class="button is-primary" @click="saveEmail" :disabled="saving">
+            <button class="button is-primary" @click="saveEmail" :disabled="saving" data-test="security-email-save">
               {{ lang('Save') }}
             </button>
           </p>
@@ -29,10 +29,10 @@
           {{ lang('Change password') }}
         </h2>
         <b-field :label="lang('Current password')" :type="cpErrors.oldpassword ? 'is-danger' : ''" :message="cpErrors.oldpassword">
-          <b-input v-model="oldPw" type="password" password-reveal />
+          <b-input v-model="oldPw" type="password" password-reveal data-test="security-oldpassword-input" />
         </b-field>
         <b-field :label="lang('New password')" :type="cpErrors.newpassword ? 'is-danger' : ''" :message="cpErrors.newpassword">
-          <b-input v-model="newPw" type="password" password-reveal />
+          <b-input v-model="newPw" type="password" password-reveal data-test="security-newpassword-input" />
         </b-field>
         <!-- Second factor required when MFA is enrolled; the current-password
              field above doubles as the step-up password. -->
@@ -42,10 +42,11 @@
           :show-password="false"
           :show-code="true"
           :errors="cpErrors"
+          testid="security-stepup"
           @clear-error="cpErrors = { ...cpErrors, [$event]: null }"
         />
         <div class="is-flex is-justify-content-end">
-          <button class="button is-primary" @click="changePassword">
+          <button class="button is-primary" @click="changePassword" data-test="security-password-update">
             {{ lang('Update password') }}
           </button>
         </div>
@@ -143,14 +144,15 @@
               v-model="emailStepUpForm"
               :show-code="true"
               :errors="emailStepUpErrors"
+              testid="security-email-stepup"
               @clear-error="emailStepUpErrors = { ...emailStepUpErrors, [$event]: null }"
             />
           </section>
           <footer class="modal-card-foot">
-            <button class="button" @click="emailStepUpOpen = false" :disabled="saving">
+            <button class="button" @click="emailStepUpOpen = false" :disabled="saving" data-test="security-email-stepup-cancel">
               {{ lang('Cancel') }}
             </button>
-            <button class="button is-primary" @click="performEmailStepUp" :disabled="saving" :class="{ 'is-loading': saving }">
+            <button class="button is-primary" @click="performEmailStepUp" :disabled="saving" :class="{ 'is-loading': saving }" data-test="security-email-stepup-continue">
               {{ lang('Continue') }}
             </button>
           </footer>

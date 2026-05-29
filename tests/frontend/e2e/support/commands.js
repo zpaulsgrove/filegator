@@ -83,3 +83,39 @@ Cypress.Commands.add('logoutUi', () => {
 Cypress.Commands.add('adminCreateUser', (params) => {
   cy.apiPost('/storeuser', params)
 })
+
+/**
+ * Generate the current TOTP for a base32 secret using the backend's own
+ * OTPHP library via a tiny standalone PHP helper (tests/.../support/totp.php).
+ * Exact algorithm parity with the server, no JS crypto dependency. Yields
+ * the trimmed 6-digit code string.
+ */
+Cypress.Commands.add('totp', (secret) => {
+  return cy.exec(`php tests/frontend/e2e/support/totp.php ${secret}`)
+    .then((res) => res.stdout.trim())
+})
+
+/**
+ * Enroll the currently-authenticated user in MFA through the REAL HTTP
+ * endpoints (begin → confirm), letting the app own secret storage,
+ * at-rest encryption and the post-confirm session refresh
+ * (establishSessionFor) — so the session stays valid afterwards. Yields
+ * { secret, backupCodes }.
+ *
+ * Why this is safe to pair with a TOTP step-up in the same test:
+ * confirmEnrollment verifies the code via verifyTotpAgainstSecret, which
+ * does NOT write a replay marker (only the login / step-up paths do). So
+ * the same-window TOTP can be re-used immediately for the action under
+ * test without tripping replay protection.
+ */
+Cypress.Commands.add('enrollMfa', () => {
+  return cy.apiPost('/mfa/enroll/begin').then((begin) => {
+    const secret = begin.body.data.secret
+    return cy.totp(secret).then((code) => {
+      return cy.apiPost('/mfa/enroll/confirm', { code }).then((confirm) => ({
+        secret,
+        backupCodes: confirm.body.data.backup_codes,
+      }))
+    })
+  })
+})

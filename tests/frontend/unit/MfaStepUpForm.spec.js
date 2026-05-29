@@ -184,4 +184,22 @@ describe('MfaStepUpForm.vue', () => {
     expect(wrapper.emitted('clear-error')).toBeTruthy()
     expect(wrapper.emitted('clear-error')[0]).toEqual(['password'])
   })
+
+  // E2E hook: when `testid` is set, per-instance data-test attributes are
+  // emitted on the code/password inputs and the backup toggle so specs can
+  // target a single instance unambiguously (the component renders in several
+  // places). Absent ⇒ no data-test attribute at all.
+  it('emits per-instance data-test hooks when testid is set', () => {
+    const wrapper = mountForm({ testid: 'x', showPassword: true, showCode: true })
+
+    expect(wrapper.find('[data-test="x-code"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="x-password"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="x-backup-toggle"]').exists()).toBe(true)
+  })
+
+  it('emits no data-test attribute when testid is absent', () => {
+    const wrapper = mountForm({ showPassword: true, showCode: true })
+
+    expect(wrapper.find('[data-test]').exists()).toBe(false)
+  })
 })

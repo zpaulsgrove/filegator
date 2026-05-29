@@ -54,6 +54,18 @@ describe('MfaStepUpForm.vue', () => {
     expect(wrapper.text()).toContain('Use a backup code instead')
   })
 
+  it('hides the password field when showPassword=false (code-only reuse)', () => {
+    // The change-password box owns its own "current password" field and reuses
+    // this component only for the code + backup toggle.
+    const wrapper = mountForm({ showPassword: false, showCode: true })
+
+    const inputs = wrapper.findAll('input.b-input-stub')
+    expect(inputs.length).toBe(1)
+    expect(wrapper.text()).not.toContain('Your password')
+    // Code input + backup toggle still render.
+    expect(wrapper.find('.step-up-toggle').exists()).toBe(true)
+  })
+
   it('emits input event when password changes with correct shape', () => {
     const wrapper = mountForm({ showCode: true })
 

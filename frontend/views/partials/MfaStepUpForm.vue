@@ -1,7 +1,9 @@
 <template>
   <div class="mfa-step-up-form">
-    <!-- Password (always visible) -->
+    <!-- Password (hidden when the caller already owns the password field,
+         e.g. the change-password box reuses its own "current password"). -->
     <b-field
+      v-if="showPassword"
       :label="lang('Your password')"
       :type="errors.password ? 'is-danger' : ''"
       :message="errors.password || ''"
@@ -52,6 +54,10 @@ export default {
       default: () => ({ password: '', code: '', useBackup: false }),
     },
     showCode: {
+      type: Boolean,
+      default: true,
+    },
+    showPassword: {
       type: Boolean,
       default: true,
     },

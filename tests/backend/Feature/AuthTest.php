@@ -279,44 +279,145 @@ class AuthTest extends TestCase
         $this->assertArrayNotHasKey('mfa_enabled', $data['data'], 'mfa_enabled must be absent when the auth adapter is not MFA-capable');
     }
 
-    /**
-     * Pin for R-9 (MFA hardening review gap).
-     *
-     * /changepassword currently does NOT require step-up auth, even when
-     * the calling user has MFA enrolled. It accepts oldpassword +
-     * newpassword only — no stepup_password / stepup_code plumbing — and
-     * succeeds. This is an intentional deferral; AdminController's
-     * mutating routes were prioritized for step-up.
-     *
-     * If step-up is added to /changepassword later, this test will fail.
-     * That's the point: update the test intentionally to document the
-     * shift in policy, don't just delete this assertion.
-     */
-    public function testChangePasswordDoesNotRequireStepUpEvenWhenMfaEnabled()
-    {
-        // Enroll MFA on john, then attach a real authenticated session via
-        // the same helper MfaTest uses for post-login state. We bypass the
-        // /login/mfa second-step on purpose — we want to assert that an
-        // MFA-enrolled, authenticated user can mutate their password
-        // without re-proving possession of their second factor.
-        $secret = \OTPHP\TOTP::create()->getSecret();
-        $codes = \Filegator\Services\Mfa\BackupCodeGenerator::generate(3, 10);
+    // -------------------------------------------------------------------------
+    // R-9 (CLOSED): step-up on /changepassword.
+    //
+    // This route used to accept oldpassword + newpassword alone, even for
+    // MFA-enrolled users (the prior pin test asserted that 200 as an intentional
+    // deferral). Step-up is now enforced: an MFA-enrolled user must also prove a
+    // current TOTP or backup code. The current password doubles as the step-up
+    // password, so the request additionally carries `code` / `use_backup`.
+    //
+    // Users WITHOUT MFA are unaffected — stepUpVerify degrades to a no-op — which
+    // is why testChangePassword() above (a no-MFA user) still passes unchanged.
+    // -------------------------------------------------------------------------
 
+    protected function enrollMfaForJohn(?array $backupCodesPlain = null): array
+    {
         $app = $this->sendRequest('GET', '/getuser');
-        $auth = $app->resolve(\Filegator\Services\Auth\AuthInterface::class);
+        $auth = $app->resolve(AuthInterface::class);
+        $secret = TOTP::create()->getSecret();
         $auth->setMfaSecret('john@example.com', $secret);
-        $auth->enableMfa('john@example.com', \Filegator\Services\Mfa\BackupCodeGenerator::hashAll($codes));
+        $plain = $backupCodesPlain ?: BackupCodeGenerator::generate(3, 10);
+        $auth->enableMfa('john@example.com', BackupCodeGenerator::hashAll($plain));
         $auth->establishSessionFor('john@example.com');
         $this->captureSession();
 
-        // POST with ONLY oldpassword + newpassword — no stepup_* fields.
+        return ['secret' => $secret, 'backup_codes' => $plain];
+    }
+
+    protected function totpFor(string $secret): string
+    {
+        return TOTP::createFromSecret($secret)->now();
+    }
+
+    protected function johnPasswordIs(string $plain): bool
+    {
+        $app = $this->sendRequest('GET', '/getuser');
+
+        return (bool) $app->resolve(AuthInterface::class)->verifyPasswordOnly('john@example.com', $plain);
+    }
+
+    public function testChangePasswordRejectedWithoutCodeWhenMfaEnabled()
+    {
+        $this->enrollMfaForJohn();
+
+        // Correct current password but no second factor → rejected, unchanged.
         $this->sendRequest('POST', '/changepassword', [
             'oldpassword' => 'john123',
             'newpassword' => 'password123',
         ]);
+        $this->assertStatus(422);
 
-        // Today: 200. When R-9 is closed and step-up is required here,
-        // this will start returning 422 / 403 and the test will fail.
+        $this->assertTrue($this->johnPasswordIs('john123'));
+        $this->assertFalse($this->johnPasswordIs('password123'));
+    }
+
+    public function testChangePasswordRejectsWrongTotpWhenMfaEnabled()
+    {
+        $this->enrollMfaForJohn();
+
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'john123',
+            'newpassword' => 'password123',
+            'code' => '000000',
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['code' => 'Invalid code']]);
+
+        $this->assertTrue($this->johnPasswordIs('john123'));
+    }
+
+    public function testChangePasswordAcceptsValidTotpWhenMfaEnabled()
+    {
+        $info = $this->enrollMfaForJohn();
+
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'john123',
+            'newpassword' => 'password123',
+            'code' => $this->totpFor($info['secret']),
+        ]);
         $this->assertOk();
+
+        $this->assertTrue($this->johnPasswordIs('password123'));
+    }
+
+    public function testChangePasswordAcceptsBackupCodeAndDecrementsCount()
+    {
+        $info = $this->enrollMfaForJohn(['ABCDE-11111', 'FGHIJ-22222', 'KLMNO-33333']);
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $before = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'john123',
+            'newpassword' => 'password123',
+            'code' => $info['backup_codes'][0],
+            'use_backup' => true,
+        ]);
+        $this->assertOk();
+        $this->assertTrue($this->johnPasswordIs('password123'));
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $after = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+        $this->assertSame($before - 1, $after);
+    }
+
+    public function testChangePasswordWrongOldPasswordKeepsFieldErrorAndDoesNotConsumeCode()
+    {
+        $info = $this->enrollMfaForJohn(['ABCDE-11111', 'FGHIJ-22222', 'KLMNO-33333']);
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $before = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+
+        // Wrong current password, but a valid backup code supplied. The
+        // oldpassword check runs FIRST, so the {oldpassword} field error is
+        // returned and the backup code is NOT consumed (validate-before-consume).
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'wrongpass',
+            'newpassword' => 'password123',
+            'code' => $info['backup_codes'][0],
+            'use_backup' => true,
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['oldpassword' => 'Wrong password']]);
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $after = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+        $this->assertSame($before, $after);
+        $this->assertTrue($this->johnPasswordIs('john123'));
+    }
+
+    public function testChangePasswordWithoutMfaNeedsNoCode()
+    {
+        // Regression pin for the R-9 closure: a user with NO MFA enrolled still
+        // changes their password with just old + new (step-up no-ops).
+        $this->signIn('john@example.com', 'john123');
+        $this->sendRequest('POST', '/changepassword', [
+            'oldpassword' => 'john123',
+            'newpassword' => 'password123',
+        ]);
+        $this->assertOk();
+        $this->assertTrue($this->johnPasswordIs('password123'));
     }
 }

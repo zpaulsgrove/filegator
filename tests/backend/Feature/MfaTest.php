@@ -617,33 +617,118 @@ class MfaTest extends TestCase
         $this->assertNull($app->resolve(AuthInterface::class)->getEmail('john@example.com'));
     }
 
-    /**
-     * Pin for R-9 (MFA hardening review gap).
-     *
-     * /me/email currently does NOT require step-up auth, even when the
-     * calling user has MFA enrolled. Email is part of buildSessionHash
-     * and influences notification routing — mutating it is a
-     * security-relevant action — but the route accepts an email field
-     * alone with no stepup_password / stepup_code plumbing. This is an
-     * intentional deferral; AdminController's mutating routes were
-     * prioritized for step-up.
-     *
-     * If step-up is added to /me/email later, this test will fail.
-     * That's the point: update the test intentionally to document the
-     * shift in policy, don't just delete this assertion.
-     */
-    public function testUpdateOwnEmailDoesNotRequireStepUpEvenWhenMfaEnabled()
+    // -------------------------------------------------------------------------
+    // R-9 (CLOSED): step-up on /me/email.
+    //
+    // The email is part of buildSessionHash and drives audit/notification
+    // routing, so an MFA-enrolled user must re-prove their password plus a
+    // current TOTP / backup code before changing it. The address is validated
+    // BEFORE the step-up gate so a malformed value can't burn a code. Users
+    // without MFA are unaffected — stepUpVerify degrades to a no-op.
+    // -------------------------------------------------------------------------
+
+    protected function johnEmail(): ?string
+    {
+        $app = $this->sendRequest('GET', '/getuser');
+
+        return $app->resolve(AuthInterface::class)->getEmail('john@example.com');
+    }
+
+    public function testUpdateEmailRejectedWithoutStepUpWhenMfaEnabled()
     {
         $this->enrollMfa('john@example.com');
         $this->establishSessionFor('john@example.com');
+        $before = $this->johnEmail();
 
-        // POST with ONLY email — no stepup_* fields.
-        $this->sendRequest('POST', '/me/email', ['email' => 'pinned@example.test']);
+        // No password / code → rejected, email unchanged.
+        $this->sendRequest('POST', '/me/email', ['email' => 'new@example.test']);
+        $this->assertStatus(422);
 
-        // Today: 200. When R-9 is closed and step-up is required here,
-        // this will start returning 422 / 403 and the test will fail.
+        $this->assertSame($before, $this->johnEmail());
+    }
+
+    public function testUpdateEmailRejectsWrongPassword()
+    {
+        $info = $this->enrollMfa('john@example.com');
+        $this->establishSessionFor('john@example.com');
+        $before = $this->johnEmail();
+
+        $this->sendRequest('POST', '/me/email', [
+            'email' => 'new@example.test',
+            'password' => 'wrongpass',
+            'code' => $this->totpFor($info['secret']),
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['password' => 'Wrong password']]);
+
+        $this->assertSame($before, $this->johnEmail());
+    }
+
+    public function testUpdateEmailRejectsWrongTotp()
+    {
+        $this->enrollMfa('john@example.com');
+        $this->establishSessionFor('john@example.com');
+        $before = $this->johnEmail();
+
+        $this->sendRequest('POST', '/me/email', [
+            'email' => 'new@example.test',
+            'password' => 'john123',
+            'code' => '000000',
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['code' => 'Invalid code']]);
+
+        $this->assertSame($before, $this->johnEmail());
+    }
+
+    public function testUpdateEmailAcceptsValidStepUp()
+    {
+        $info = $this->enrollMfa('john@example.com');
+        $this->establishSessionFor('john@example.com');
+
+        $this->sendRequest('POST', '/me/email', [
+            'email' => 'new@example.test',
+            'password' => 'john123',
+            'code' => $this->totpFor($info['secret']),
+        ]);
         $this->assertOk();
-        $this->assertResponseJsonHas(['data' => ['email' => 'pinned@example.test']]);
+        $this->assertResponseJsonHas(['data' => ['email' => 'new@example.test']]);
+        $this->assertSame('new@example.test', $this->johnEmail());
+    }
+
+    public function testUpdateEmailInvalidAddressValidatedBeforeConsumingCode()
+    {
+        $this->enrollMfa('john@example.com', null, ['ABCDE-11111', 'FGHIJ-22222', 'KLMNO-33333']);
+        $this->establishSessionFor('john@example.com');
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $before = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+
+        // Malformed email + a valid backup code. Email validation runs FIRST,
+        // so the request 422s on the email and the backup code is NOT consumed.
+        $this->sendRequest('POST', '/me/email', [
+            'email' => 'not-an-email',
+            'password' => 'john123',
+            'code' => 'ABCDE-11111',
+            'use_backup' => true,
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['email' => 'Invalid email address']]);
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $after = $app->resolve(AuthInterface::class)->getMfaState('john@example.com')['backup_codes_remaining'];
+        $this->assertSame($before, $after);
+    }
+
+    public function testUpdateEmailWithoutMfaNeedsNoStepUp()
+    {
+        // Regression: a user with no MFA enrolled updates their email with the
+        // email field alone (step-up no-ops).
+        $this->establishSessionFor('john@example.com');
+
+        $this->sendRequest('POST', '/me/email', ['email' => 'plain@example.test']);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['email' => 'plain@example.test']]);
     }
 
     // ---------------------------------------------------------------------

@@ -361,4 +361,122 @@ describe('Security.vue — characterization tests (Workstream 0)', () => {
     await flushPromises()
     expect(wrapper.vm.managing).toBe(false)
   })
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 9. R-9 closure: step-up second factor on change-password.
+  //    The current-password field doubles as the step-up password, so only
+  //    the code/useBackup are forwarded from the inline MfaStepUpForm.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it('changePassword forwards the step-up code/useBackup from cpStepUp', async () => {
+    api.changePassword.mockResolvedValue({})
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.oldPw = 'john123'
+    wrapper.vm.newPw = 'new-password'
+    wrapper.vm.cpStepUp = { password: '', code: '123456', useBackup: false }
+
+    wrapper.vm.changePassword()
+    await flushPromises()
+
+    expect(api.changePassword).toHaveBeenCalledWith({
+      oldpassword: 'john123',
+      newpassword: 'new-password',
+      code: '123456',
+      useBackup: false,
+    })
+  })
+
+  it('changePassword maps a 422 code error to cpErrors.code and clears the entered code', async () => {
+    api.changePassword.mockRejectedValue({
+      response: { status: 422, data: { data: { code: 'Invalid code' } } },
+    })
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.oldPw = 'john123'
+    wrapper.vm.newPw = 'new-password'
+    wrapper.vm.cpStepUp = { password: '', code: '000000', useBackup: false }
+
+    wrapper.vm.changePassword()
+    await flushPromises()
+
+    expect(wrapper.vm.cpErrors).toEqual({ code: 'Invalid code' })
+    // A failed/consumed code is cleared so the user enters a fresh one.
+    expect(wrapper.vm.cpStepUp.code).toBe('')
+    expect(wrapper.vm.$toast.open).not.toHaveBeenCalled()
+  })
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 10. R-9 closure: step-up on email change.
+  //     MFA-enrolled users get a modal (password + code); non-MFA users keep
+  //     the original one-click submit.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it('saveEmail opens the step-up modal (no API call) when MFA is enabled', async () => {
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.email = 'new@example.test'
+    wrapper.vm.saveEmail()
+
+    expect(wrapper.vm.emailStepUpOpen).toBe(true)
+    expect(api.updateMyEmail).not.toHaveBeenCalled()
+  })
+
+  it('performEmailStepUp forwards email + password + code to api.updateMyEmail', async () => {
+    api.updateMyEmail.mockResolvedValue({})
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.email = 'new@example.test'
+    wrapper.vm.saveEmail()
+    wrapper.vm.emailStepUpForm = { password: 'john123', code: '123456', useBackup: false }
+
+    wrapper.vm.performEmailStepUp()
+    await flushPromises()
+
+    expect(api.updateMyEmail).toHaveBeenCalledWith({
+      email: 'new@example.test',
+      password: 'john123',
+      code: '123456',
+      useBackup: false,
+    })
+    expect(wrapper.vm.emailStepUpOpen).toBe(false)
+  })
+
+  it('email step-up maps a 422 code error inline and keeps the modal open', async () => {
+    api.updateMyEmail.mockRejectedValue({
+      response: { status: 422, data: { data: { code: 'Invalid code' } } },
+    })
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.email = 'new@example.test'
+    wrapper.vm.saveEmail()
+    wrapper.vm.emailStepUpForm = { password: 'john123', code: '000000', useBackup: false }
+
+    wrapper.vm.performEmailStepUp()
+    await flushPromises()
+
+    expect(wrapper.vm.emailStepUpErrors.code).toBe('Invalid code')
+    expect(wrapper.vm.emailStepUpForm.code).toBe('')
+    expect(wrapper.vm.emailStepUpOpen).toBe(true)
+    expect(wrapper.vm.$toast.open).not.toHaveBeenCalled()
+  })
+
+  it('saveEmail submits directly without a modal when MFA is disabled', async () => {
+    api.mfaState.mockResolvedValue(MFA_DISABLED_STATE)
+    api.updateMyEmail.mockResolvedValue({})
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.email = 'new@example.test'
+    wrapper.vm.saveEmail()
+    await flushPromises()
+
+    expect(wrapper.vm.emailStepUpOpen).toBe(false)
+    expect(api.updateMyEmail).toHaveBeenCalledWith({ email: 'new@example.test' })
+  })
 })

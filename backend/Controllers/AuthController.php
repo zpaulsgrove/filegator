@@ -18,6 +18,7 @@ use Filegator\Services\Audit\AuditMailer;
 use Filegator\Services\Auth\AuthInterface;
 use Filegator\Services\Auth\MfaCapableInterface;
 use Filegator\Services\Auth\MfaLockout;
+use Filegator\Services\Auth\RequiresStepUpAuth;
 use Filegator\Services\Mfa\MfaService;
 use Filegator\Services\Session\SessionStorageInterface;
 use Filegator\Services\Tmpfs\TmpfsInterface;
@@ -26,6 +27,8 @@ use Rakit\Validation\Validator;
 
 class AuthController
 {
+    use RequiresStepUpAuth;
+
     const MFA_PENDING_KEY = 'mfa_pending';
     const MFA_PENDING_TTL = 300;
 
@@ -281,7 +284,7 @@ class AuthController
         return $payload;
     }
 
-    public function changePassword(Request $request, Response $response, AuthInterface $auth, Validator $validator)
+    public function changePassword(Request $request, Response $response, AuthInterface $auth, Validator $validator, MfaService $mfa, MfaLockout $lockout, AuditMailer $audit)
     {
         $validator->setMessage('required', 'This field is required');
         $validation = $validator->validate($request->all(), [
@@ -295,11 +298,32 @@ class AuthController
             return $response->json($errors->firstOfAll(), 422);
         }
 
-        if (! $auth->authenticate($auth->user()->getUsername(), $request->input('oldpassword'))) {
+        $username = $auth->user()->getUsername();
+
+        // Verify the current password FIRST. This check is load-bearing and
+        // must NOT be folded into the step-up call below: it enforces the
+        // password for users without MFA (whom stepUpVerify intentionally
+        // no-ops) and produces the {oldpassword: ...} field key the frontend
+        // maps. Doing it before step-up also guarantees a wrong password never
+        // burns a TOTP / backup code.
+        if (! $auth->authenticate($username, $request->input('oldpassword'))) {
             return $response->json(['oldpassword' => 'Wrong password'], 422);
         }
 
-        return $response->json($auth->update($auth->user()->getUsername(), $auth->user(), $request->input('newpassword')));
+        // Step-up: when the caller has MFA enrolled, re-prove the second factor
+        // before mutating the password. Reuses the already-supplied oldpassword
+        // as the step-up password (re-verified inside the trait — a harmless
+        // duplicate). Degrades to a no-op when no MFA is enrolled.
+        $check = $this->stepUpVerify(
+            $response, $auth, $mfa, $lockout, $username, $request->getClientIp(),
+            (string) $request->input('oldpassword', ''),
+            (string) $request->input('code', ''),
+            (bool) $request->input('use_backup', false)
+        );
+        if (! $check['ok']) return;
+        $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
+
+        return $response->json($auth->update($username, $auth->user(), $request->input('newpassword')));
     }
 
     protected function completeMfaLogin(AuthInterface $auth, SessionStorageInterface $session, string $username): void

@@ -228,6 +228,10 @@ const api = {
       axios.post('changepassword', {
         oldpassword: params.oldpassword,
         newpassword: params.newpassword,
+        // Step-up second factor; ignored by the backend when the user has no
+        // MFA enrolled. oldpassword doubles as the step-up password.
+        code: params.code,
+        use_backup: !!params.useBackup,
       })
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
@@ -306,7 +310,14 @@ const api = {
   },
   updateMyEmail(params) {
     return new Promise((resolve, reject) => {
-      axios.post('me/email', { email: params.email })
+      axios.post('me/email', {
+        email: params.email,
+        // Step-up credentials; ignored by the backend when the user has no
+        // MFA enrolled.
+        password: params.password,
+        code: params.code,
+        use_backup: !!params.useBackup,
+      })
         .then(res => resolve(res.data.data))
         .catch(error => reject(error))
     })

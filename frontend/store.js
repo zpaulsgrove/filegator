@@ -31,6 +31,14 @@ export default new Vuex.Store({
       content: [],
     },
     tree: {},
+    // Cross-login deep-link stash. Set during bootstrap (main.js) when a
+    // logged-out user follows a `?cd=`/`?folder=` deep link, and consumed
+    // after authentication by routeAfterLogin (postLogin.js) or by a manual
+    // SelectFolder.pick(). Cleared in `initialize` (which runs on both
+    // bootstrap and logout) so a stale link can never attach to a later,
+    // unrelated session.
+    pendingCd: null,
+    pendingFolder: null,
   },
   getters: {
     hasPermissions: (state) => (permissions) => {
@@ -46,6 +54,16 @@ export default new Vuex.Store({
       this.commit('resetCwd')
       this.commit('resetTree')
       this.commit('destroyUser')
+      // Stash hygiene: drop any deep-link intent on (re)initialize so it
+      // cannot survive across a logout or a fresh bootstrap.
+      state.pendingCd = null
+      state.pendingFolder = null
+    },
+    setPendingCd(state, cd) {
+      state.pendingCd = cd || null
+    },
+    setPendingFolder(state, folder) {
+      state.pendingFolder = folder || null
     },
     resetCwd(state) {
       state.cwd = {

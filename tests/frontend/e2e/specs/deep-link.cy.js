@@ -113,10 +113,13 @@ describe('Deep-link / folder restoration', () => {
   // 4. (multi-folder cross-session deep link, Phase 2)
   // ─────────────────────────────────────────────────────────────────────
 
-  it('multi-folder ?folder=&cd= deep link restores folder+path after login', () => {
-    // ── Setup: admin creates jane with two homedirs and seeds a deep path ──
+  // NB: these three scenarios are deliberately separate `it` blocks. Cypress
+  // (and the browser) does NOT reload on a hash-only URL change, so a second
+  // `cy.visit('/#/...')` within one test after the SPA already loaded is a
+  // no-op (main.js never re-bootstraps). Splitting gives each scenario a fresh
+  // browser via testIsolation, so its first `cy.visit` is a real page load.
 
-    cy.login('admin', 'admin123')
+  function createJane() {
     cy.adminCreateUser({
       username: 'jane',
       password: 'jane12345',
@@ -125,70 +128,75 @@ describe('Deep-link / folder restoration', () => {
       homedirs: ['/projects', '/personal'],
       permissions: ['read', 'write', 'upload', 'download'],
     })
+  }
+
+  it('multi-folder users encode the active folder in deep links (goTo)', () => {
+    cy.login('admin', 'admin123')
+    createJane()
     cy.apiPost('/logout')
 
-    // Log in as jane via the force-rendered login form.
-    // Visit '/' first so main.js boots without a ?folder= stash yet.
+    // Log in as jane and pick a folder via the picker.
     cy.visit('/')
     cy.get('[data-test="login-username"]').type('jane')
     cy.get('[data-test="login-password"]').type('jane12345')
     cy.get('[data-test="login-submit"]').click()
-
-    // Jane has two homedirs and no active selection — the picker shows.
     cy.get('[data-test="folder-picker"]').should('be.visible')
     cy.get('[data-test="folder-button"][data-test-path="/personal"]').click()
-
-    // Now inside the /personal root. Create subfolder 'deep' and enter it.
     cy.get('[data-test="current-folder"]').should('contain.text', 'personal')
+
+    // Create a subfolder and enter it. The deep link must now encode BOTH the
+    // active homedir (?folder=) and the subdirectory (?cd=) so a bookmark is
+    // self-describing. vue-router percent-encodes the slashes, so assert on
+    // the encoding-agnostic substrings.
     cy.get('[data-test="new-menu"]').click()
     cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type('deep')
     cy.get('.dialog').contains('button', 'Create').click()
     cy.contains('.file-row a.name', 'deep').click()
-
-    // Confirm URL encodes both the folder and the subdirectory. vue-router
-    // percent-encodes the slashes (folder=%2Fpersonal&cd=%2Fdeep), so assert
-    // on the encoding-agnostic substrings.
     cy.hash().should('include', 'folder=').and('include', 'personal')
     cy.hash().should('include', 'cd=').and('include', 'deep')
+  })
 
-    // Create a marker file inside the deep subfolder.
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type('mark.txt')
-    cy.get('.dialog').contains('button', 'Create').click()
-    cy.contains('.file-row a.name', 'mark.txt').should('exist')
-
-    // Log jane out.
+  it('multi-folder cross-session deep link restores folder + path after login', () => {
+    // Seed /personal/deep/mark.txt for jane via the API. A multi-folder user
+    // has no active homedir until one is selected, so selectfolder comes first.
+    cy.login('admin', 'admin123')
+    createJane()
+    cy.apiPost('/logout')
+    cy.login('jane', 'jane12345')
+    cy.apiPost('/selectfolder', { homedir: '/personal' })
+    cy.apiPost('/createnew', { type: 'dir', name: 'deep' })
+    cy.apiPost('/changedir', { to: '/deep' })
+    cy.apiPost('/createnew', { type: 'file', name: 'mark.txt' })
     cy.apiPost('/logout')
 
-    // ── Cross-session restore: visit the deep link while logged out ──
-
-    // IMPORTANT: do NOT cy.visit('/login'). Visiting the raw URL directly
-    // ensures main.js can stash ?folder= and ?cd= before the guest auth
-    // check, preserving the restore intent through the login flow.
+    // Visit the self-describing deep link while logged out. This is the first
+    // page load in this test, so main.js bootstraps and stashes ?folder= and
+    // ?cd= before the guest auth check. Do NOT cy.visit('/login') — that would
+    // drop the in-memory stash.
     cy.visit('/#/?folder=/personal&cd=/deep')
-
-    // Log in as jane via the force-rendered login form.
     cy.get('[data-test="login-username"]').type('jane')
     cy.get('[data-test="login-password"]').type('jane12345')
     cy.get('[data-test="login-submit"]').click()
 
-    // routeAfterLogin sees pendingFolder=/personal and pendingCd=/deep.
-    // It selects /personal and routes directly — no picker interaction.
+    // routeAfterLogin selects /personal and restores /deep — no picker.
     cy.contains('.file-row a.name', 'mark.txt').should('exist')
     cy.get('[data-test="current-folder"]').should('contain.text', 'personal')
+    cy.get('[data-test="folder-picker"]').should('not.exist')
+  })
 
-    // ── Sub-case: nonexistent folder hint falls back to the picker ──
-
+  it('multi-folder deep link with an invalid folder falls back to the picker', () => {
+    cy.login('admin', 'admin123')
+    createJane()
     cy.apiPost('/logout')
-    cy.visit('/#/?folder=/nonexistent&cd=/deep')
 
+    // A folder hint that isn't one of jane's homedirs must not bypass the
+    // picker. First page load in this test, so the deep link is bootstrapped.
+    cy.visit('/#/?folder=/nonexistent&cd=/deep')
     cy.get('[data-test="login-username"]').type('jane')
     cy.get('[data-test="login-password"]').type('jane12345')
     cy.get('[data-test="login-submit"]').click()
 
-    // /nonexistent is not in jane's homedirs; the picker must be shown.
     cy.get('[data-test="folder-picker"]').should('be.visible')
   })
 })

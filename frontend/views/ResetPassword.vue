@@ -10,7 +10,7 @@
           <p>{{ lang('Validating link…') }}</p>
         </div>
 
-        <div v-else-if="state === 'invalid'">
+        <div v-else-if="state === 'invalid'" data-test="reset-invalid">
           <h3 class="is-size-5" style="margin: 1em 0">
             {{ lang('Link not valid') }}
           </h3>
@@ -26,19 +26,19 @@
             {{ lang('Choose a new password') }}
           </h3>
           <b-field :label="lang('New password')" :type="error ? 'is-danger' : ''" :message="error">
-            <b-input v-model="newPassword" type="password" required password-reveal />
+            <b-input v-model="newPassword" type="password" required password-reveal data-test="reset-newpassword" />
           </b-field>
           <b-field :label="lang('Confirm password')">
-            <b-input v-model="confirm" type="password" required password-reveal />
+            <b-input v-model="confirm" type="password" required password-reveal data-test="reset-confirm" />
           </b-field>
           <div class="buttons is-right" style="margin-top: 1em; margin-bottom: 0">
-            <button class="button is-primary">
+            <button class="button is-primary" data-test="reset-submit">
               {{ lang('Update password') }}
             </button>
           </div>
         </form>
 
-        <div v-else-if="state === 'done'">
+        <div v-else-if="state === 'done'" data-test="reset-done">
           <h3 class="is-size-5" style="margin: 1em 0">
             {{ lang('Password updated') }}
           </h3>

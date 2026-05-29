@@ -38,9 +38,20 @@ $config = require __DIR__.'/configuration_sample.php';
 
 // Relaxed admin MFA so admin/admin123 logs in directly for the bulk of
 // specs. Step-up / MFA specs use a separately seeded enrolled admin so
-// the step-up gate is genuinely live (see plan F4 / S2). The
-// `mfa_required_for_admins` enforcement itself is covered by the backend
-// Feature suite, not E2E.
-$config['mfa_required_for_admins'] = false;
+// the step-up gate is genuinely live. Enabled only for the isolated
+// forced-setup run, which sets FILEGATOR_E2E_MFA_REQUIRED=1 (the default
+// run leaves it unset → false → single-step admin login).
+$config['mfa_required_for_admins'] = getenv('FILEGATOR_E2E_MFA_REQUIRED') === '1';
+
+// Capture outgoing email to a file the Cypress runner can read (password
+// reset emails the plaintext token in the URL; only its hash is persisted).
+$config['services']['Filegator\Services\Mailer\MailerInterface'] = [
+    'handler' => '\Tests\Fakes\FileMailer',
+    'config' => ['file' => __DIR__.'/private/tmp/e2e_last_email.json'],
+];
+
+// Enable the password-reset feature (disabled when reset_url_base is null).
+$config['services']['Filegator\Services\PasswordReset\PasswordResetService']['config']['reset_url_base'] = 'http://localhost:8081/';
+$config['frontend_config']['password_reset_enabled'] = true;
 
 return $config;

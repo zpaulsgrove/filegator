@@ -90,7 +90,7 @@ describe('Deep-link / folder restoration', () => {
   // 3. (security) Traversal ?cd= path is confined to the homedir root
   // ─────────────────────────────────────────────────────────────────────
 
-  it('traversal cd path cannot escape the homedir', () => {
+  it('traversal cd path is confined to the homedir root', () => {
     cy.login('admin', 'admin123')
 
     // Attempt a path-traversal via the URL hash.
@@ -99,9 +99,14 @@ describe('Deep-link / folder restoration', () => {
     // The browser UI must still render successfully.
     cy.get('[data-test="new-menu"]').should('be.visible')
 
-    // The breadcrumb must NOT contain "etc" — the traversal path must be
-    // confined within the homedir and never resolve to a system directory.
-    cy.get('.breadcrumb').should('not.contain.text', 'etc')
+    // The backend (Filesystem::applyPathPrefix) collapses any '..' segment to
+    // the homedir root, so the *listing* is the admin's root — where the
+    // resetBackend fixtures 'projects' and 'personal' live — and never the
+    // system /etc directory. We assert on the listing (the real confinement
+    // guarantee) rather than the breadcrumb, which cosmetically echoes the raw
+    // requested path.
+    cy.contains('.file-row a.name', 'projects').should('exist')
+    cy.contains('.file-row a.name', 'passwd').should('not.exist')
   })
 
   // ─────────────────────────────────────────────────────────────────────

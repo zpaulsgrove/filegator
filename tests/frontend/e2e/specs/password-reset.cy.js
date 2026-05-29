@@ -23,7 +23,10 @@ describe('Password reset', () => {
   })
 
   it('resets the password via the emailed token', () => {
-    cy.visit('/forgot-password')
+    // Hash route: the router is in hash mode and bounces guests on non-hash
+    // paths to the login view, so the form only renders via the #/ URL
+    // (mirrors the reset-password visit below).
+    cy.visit('/#/forgot-password')
     cy.get('[data-test="forgot-email"]').type(ADMIN_EMAIL)
     cy.get('[data-test="forgot-submit"]').click()
     cy.get('[data-test="forgot-sent"]').should('be.visible')

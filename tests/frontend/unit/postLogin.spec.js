@@ -34,11 +34,11 @@ beforeEach(() => {
 describe('routeAfterLogin', () => {
 
   // ─────────────────────────────────────────────
-  // Guest (homedirs: [])
+  // Guest
   // ─────────────────────────────────────────────
 
-  describe('guest (homedirs: [])', () => {
-    it('pushes "/" and does NOT clear the pending stash', () => {
+  describe('guest', () => {
+    it('pushes "/" and does NOT clear the pending stash (empty homedirs)', () => {
       const router = makeRouter()
       const store = makeStore({ pendingCd: '/some/path', pendingFolder: null })
       const user = { homedirs: [] }
@@ -49,6 +49,22 @@ describe('routeAfterLogin', () => {
       // The stash must NOT be consumed for a guest call
       expect(store.commit).not.toHaveBeenCalledWith('setPendingCd', null)
       expect(store.commit).not.toHaveBeenCalledWith('setPendingFolder', null)
+    })
+
+    it('detects guest by ROLE even with a single homedir, preserving the stash', () => {
+      // The real guest fixture is { role: 'guest', homedirs: ['/'] } — length 1.
+      // It must NOT be treated as a single-folder user (which would consume
+      // pendingCd during bootstrap, before the user logs in).
+      const router = makeRouter()
+      const store = makeStore({ pendingCd: '/sub', pendingFolder: null })
+      const user = { role: 'guest', homedirs: ['/'], active_homedir: null }
+
+      routeAfterLogin(user, router, store)
+
+      expect(router.push).toHaveBeenCalledWith('/')
+      // No selectFolder round-trip, no stash consumption.
+      expect(api.selectFolder).not.toHaveBeenCalled()
+      expect(store.commit).not.toHaveBeenCalledWith('setPendingCd', null)
     })
   })
 

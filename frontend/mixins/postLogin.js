@@ -43,13 +43,13 @@ function landInBrowser(router, store, folder) {
  * Decide where to route the user immediately after a successful login
  * (or after the bootstrap `getUser` fetch on page load).
  *
- *   homedirs.length === 0 (guest) — go to `/`. Guest is its own auth
- *   path with a single built-in homedir; the picker is never relevant.
- *   IMPORTANT: do NOT consume the deep-link stash here. main.js sets
- *   pendingCd/pendingFolder and then calls this for guests right away;
- *   consuming it now would clear it before the user ever authenticates.
- *   The post-login call (Login.vue) lands in the authenticated branches
- *   below, which do the restore.
+ *   guest — route to `/` (where the forced-login form renders) and DO NOT
+ *   consume the deep-link stash: it must survive until the user actually
+ *   authenticates, at which point the post-login call lands in the
+ *   authenticated branches below and does the restore. Detect guests by
+ *   ROLE — the guest fixture has homedirs:['/'] (length 1), so an
+ *   `homedirs.length === 0` test would misclassify it as single-folder and
+ *   consume the stash too early.
  *
  *   homedirs.length === 1 — go straight into the file browser, restoring
  *   any pending `cd`. The backend auto-seeds SESSION_ACTIVE_HOMEDIR at
@@ -68,7 +68,7 @@ export function routeAfterLogin(user, router, store) {
   const active = user && user.active_homedir ? user.active_homedir : null
   const pendingFolder = store && store.state.pendingFolder ? store.state.pendingFolder : null
 
-  if (homedirs.length === 0) {
+  if (!user || user.role === 'guest' || homedirs.length === 0) {
     router.push('/').catch(() => {})
     return
   }

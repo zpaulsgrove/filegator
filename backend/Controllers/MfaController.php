@@ -161,7 +161,7 @@ class MfaController
         return $response->json(['backup_codes' => $codes]);
     }
 
-    public function updateEmail(Request $request, Response $response, AuthInterface $auth)
+    public function updateEmail(Request $request, Response $response, AuthInterface $auth, MfaService $mfa, MfaLockout $lockout, AuditMailer $audit)
     {
         if (! $auth instanceof MfaCapableInterface) {
             return $response->json('Not supported', 501);
@@ -170,9 +170,23 @@ class MfaController
         $username = $user->getUsername();
         $email = $request->input('email', null);
 
+        // Validate the email format BEFORE step-up so a malformed address can't
+        // burn a TOTP / backup code on the gate that fires next.
         if (! $this->emailValid($email)) {
             return $response->json(['email' => 'Invalid email address'], 422);
         }
+
+        // Step-up: the email is part of buildSessionHash and drives audit /
+        // notification routing, so re-prove the second factor before mutating
+        // it when the caller has MFA enrolled. Degrades to a no-op otherwise.
+        $check = $this->stepUpVerify(
+            $response, $auth, $mfa, $lockout, $username, $request->getClientIp(),
+            (string) $request->input('password', ''),
+            (string) $request->input('code', ''),
+            (bool) $request->input('use_backup', false)
+        );
+        if (! $check['ok']) return;
+        $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
 
         $normalized = ($email === '' || $email === null) ? null : strtolower(trim($email));
 

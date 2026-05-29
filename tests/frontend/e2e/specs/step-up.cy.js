@@ -70,9 +70,13 @@ describe('MFA step-up', () => {
     })
 
     cy.get('.toast').should('contain.text', 'Saved')
-    // Durable check: reload and confirm the new (lowercased) email persisted.
-    cy.reload()
-    cy.get('[data-test="security-email-input"]').should('have.value', 'newmail@example.com')
+    // Durable check at the API layer. We deliberately avoid cy.reload() here:
+    // a cold boot lands on /security before the user session is re-hydrated by
+    // /getuser, so the route guard bounces off the protected route and the
+    // page never renders. GET /mfa/state confirms the new (lowercased) email
+    // actually persisted server-side.
+    cy.request({ method: 'GET', url: '/?r=/mfa/state' })
+      .its('body.data.email').should('eq', 'newmail@example.com')
   })
 
   it('rejects an email change with a wrong step-up password', () => {

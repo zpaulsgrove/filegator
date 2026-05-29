@@ -26,29 +26,40 @@ There are also under-the-hood security improvements (TOTP secrets are now encryp
 
 ---
 
+## Automated vs. manual
+
+Items tagged **_(automated: spec)_** run on every CI build (`tests/frontend/e2e/`) and only
+need a spot-check. Items tagged **_(manual)_** still need a human — email alerts/digests, the
+two-browser MFA-binding and two-tab race, and deep-link restoration. Section B/C admin-UI items
+are tagged **_(automated: admin-users.cy.js — PR 2)_**: automated in the follow-up PR.
+
+---
+
 ## Tasks (please tick as you go)
 
 ### A. Multi-folder users (regular user)
 
 You'll need at least one user account configured with 2+ folders for this section. Ask the admin running UAT to set one up if you don't have one. Suggested fixture: a test user assigned `/projects` AND `/personal`.
 
-- [ ] **Single-folder user, no change:** Log in with a regular single-folder user. You should land directly in your folder as before, with no picker screen. Browse around briefly to confirm.
-- [ ] **Multi-folder user, first login:** Log out, then log in as the multi-folder test user. After password (and MFA if enabled), you should see a **folder picker** screen listing your assigned folders.
-- [ ] Click one of the folders → you land in that folder's file listing.
-- [ ] In the top navigation bar, find the **"Switch folder"** dropdown. Open it.
-- [ ] Switch to a different folder using the dropdown → the file listing updates to that folder.
-- [ ] Upload a small file to folder A.
-- [ ] Switch to folder B → confirm the file from folder A does **not** appear here.
-- [ ] Switch back to folder A → file is still there.
+- [ ] **Single-folder user, no change:** Log in with a regular single-folder user. You should land directly in your folder as before, with no picker screen. Browse around briefly to confirm. _(automated: multi-folder.cy.js — admin is single-folder)_
+- [ ] **Multi-folder user, first login:** Log out, then log in as the multi-folder test user. After password (and MFA if enabled), you should see a **folder picker** screen listing your assigned folders. _(automated: multi-folder.cy.js)_
+- [ ] Click one of the folders → you land in that folder's file listing. _(automated: multi-folder.cy.js)_
+- [ ] In the top navigation bar, find the **"Switch folder"** dropdown. Open it. _(automated: multi-folder.cy.js)_
+- [ ] Switch to a different folder using the dropdown → the file listing updates to that folder. _(automated: multi-folder.cy.js)_
+- [ ] Upload a small file to folder A. _(automated: multi-folder-isolation.cy.js — uses create; upload itself in file-upload.cy.js)_
+- [ ] Switch to folder B → confirm the file from folder A does **not** appear here. _(automated: multi-folder-isolation.cy.js)_
+- [ ] Switch back to folder A → file is still there. _(automated: multi-folder-isolation.cy.js)_
 
 **Deep-link behavior:**
 
 - [ ] Copy the URL of a file or subfolder inside folder A while logged in.
 - [ ] Log out.
 - [ ] Paste the URL into the browser → you land on the login page.
-- [ ] Log in → you should arrive at the deep-linked location (folder A's subfolder), **not** the picker. Active folder follows the deep link.
+- [ ] Log in → you should arrive at the deep-linked location (folder A's subfolder), **not** the picker. Active folder follows the deep link. _(manual — **not implemented**: routeAfterLogin always lands on the folder root, not the deep link. Flag if product wants this.)_
 
 ### B. Multi-folder users (admin assignment)
+
+> _(automated: admin-users.cy.js — PR 2; the UI add/remove-folder + step-up flow.)_
 
 - [ ] Log in as an admin.
 - [ ] Open the user management screen (the gear / admin menu).
@@ -69,6 +80,8 @@ You'll need at least one user account configured with 2+ folders for this sectio
 
 ### C. Admin step-up confirmation (MFA-enrolled admins only)
 
+> _(automated: admin-users.cy.js — PR 2 (UI happy-path + wrong-password reject); the full reject-without-step-up matrix and the fat-finger "code not burned" cases are covered by backend AdminStepUpTest.)_
+
 This whole section only applies if your admin account has MFA enabled. If you've intentionally not enrolled, skip — but flag it in the "Anything weird?" box.
 
 - [ ] **Create user:** Try to create a new user without filling in the step-up password / code → the form should reject and ask for them.
@@ -84,6 +97,8 @@ This whole section only applies if your admin account has MFA enabled. If you've
 - [ ] Immediately use the same 6-digit code to perform a real admin action (e.g., create a test user). It should be **accepted** — proof that the failed self-reset attempt did NOT burn your code.
 
 ### D. Tighter MFA login
+
+> _(manual — needs two browsers/tabs; the binding + two-tab-race logic is backend-tested: MfaTest::testTwoTabRaceOlderNonceLoses and the pending-binding checks.)_
 
 This needs two browsers (Chrome + Firefox, or Chrome + Chrome Incognito).
 
@@ -102,6 +117,8 @@ This needs two browsers (Chrome + Firefox, or Chrome + Chrome Incognito).
 
 ### E. Operator alerts on backup-code use
 
+> _(manual — needs the operator inbox; the alert-fires / failed-attempt-does-not-fire logic is backend-tested: MfaTest + AuditAlertsTest. Email **delivery/rendering** stays manual.)_
+
 You'll need access to the operator audit-alert inbox for this.
 
 - [ ] Log out. Log in with your **backup code** instead of your authenticator app (toggle "Use a backup code" on the code screen).
@@ -118,6 +135,8 @@ You'll need access to the operator audit-alert inbox for this.
 
 ### F. Weekly user digest (operator-facing)
 
+> _(manual — needs the operator inbox; digest scheduling + content/escaping is backend-tested: AuditAlertsTest. Email **delivery/rendering** stays manual.)_
+
 The weekly digest piggy-backs on the admin "List users" page — opening it triggers the scheduler if a digest is due.
 
 - [ ] Log in as an admin → open the users list.
@@ -129,17 +148,17 @@ The weekly digest piggy-backs on the admin "List users" page — opening it trig
 
 Quick pin to make sure nothing regressed:
 
-- [ ] Log in (with MFA where applicable) — still works.
-- [ ] Upload, download, rename, move, delete a file.
-- [ ] Password reset round-trip: Forgot password → email → reset → log in with new password.
-- [ ] Regenerate MFA backup codes from your profile (still requires password + current code).
-- [ ] Disable MFA on a test user account (still requires password + current code, still allowed for non-required roles).
+- [ ] Log in (with MFA where applicable) — still works. _(automated: auth.cy.js, mfa-login.cy.js)_
+- [ ] Upload, download, rename, move, delete a file. _(automated: file-upload / file-ops / file-move-copy.cy.js; single download is manual)_
+- [ ] Password reset round-trip: Forgot password → email → reset → log in with new password. _(automated: password-reset.cy.js; inbox step manual)_
+- [ ] Regenerate MFA backup codes from your profile (still requires password + current code). _(automated: mfa-manage.cy.js)_
+- [ ] Disable MFA on a test user account (still requires password + current code, still allowed for non-required roles). _(automated: mfa-manage.cy.js)_
 
 ### H. Smoke check (everyone)
 
-- [ ] Page loads are not noticeably slower than before this deploy.
-- [ ] No JavaScript errors visible in the browser console during normal use.
-- [ ] Logout button still works and clears your session.
+- [ ] Page loads are not noticeably slower than before this deploy. _(manual — perceived performance)_
+- [ ] No JavaScript errors visible in the browser console during normal use. _(partly automated — Cypress fails specs on uncaught app exceptions)_
+- [ ] Logout button still works and clears your session. _(automated: auth.cy.js)_
 
 ---
 

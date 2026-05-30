@@ -28,7 +28,9 @@ class FeatureTest extends TestCase
     {
         $this->sendRequest('DELETE', '/');
 
-        $this->assertStatus(401);
+        // A valid route hit with an unsupported HTTP method is 405 Method Not
+        // Allowed — not 401 (which wrongly implied an auth problem).
+        $this->assertStatus(405);
     }
 
     public function testNotFoundPage()

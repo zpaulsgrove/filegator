@@ -11,6 +11,7 @@
 namespace Tests\Unit\Auth;
 
 use Filegator\Services\Auth\Adapters\JsonFile;
+use Filegator\Services\Mfa\BackupCodeGenerator;
 
 /**
  * @internal
@@ -34,5 +35,42 @@ class JsonFileTest extends AuthTest
         $this->auth->init([
             'file' => $this->mock_file,
         ]);
+    }
+
+    /**
+     * Exercises the REAL consumeBackupCode + mutateUser (flock-based RMW) path.
+     * The MockUsers test double overrides mutateUser with a non-locking variant,
+     * so the production single-use logic is never otherwise covered.
+     */
+    public function testConsumeBackupCodeIsSingleUseAgainstRealAdapter()
+    {
+        $this->addAdmin();
+        $this->auth->setMfaSecret('admin@example.com', 'JBSWY3DPEHPK3PXP');
+        $this->auth->enableMfa('admin@example.com', BackupCodeGenerator::hashAll(['AAAAA-11111', 'BBBBB-22222']));
+
+        $this->assertSame(2, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
+
+        // The adapter receives the NORMALIZED code (MfaService normalizes before
+        // delegating). First use of a valid code succeeds and decrements.
+        $this->assertTrue($this->auth->consumeBackupCode('admin@example.com', BackupCodeGenerator::normalize('AAAAA-11111')));
+        $this->assertSame(1, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
+
+        // Re-using the SAME code must fail — it was removed from storage.
+        $this->assertFalse($this->auth->consumeBackupCode('admin@example.com', BackupCodeGenerator::normalize('AAAAA-11111')));
+        $this->assertSame(1, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
+
+        // The OTHER code still works exactly once.
+        $this->assertTrue($this->auth->consumeBackupCode('admin@example.com', BackupCodeGenerator::normalize('BBBBB-22222')));
+        $this->assertSame(0, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
+    }
+
+    public function testConsumeWrongBackupCodeDoesNotDecrement()
+    {
+        $this->addAdmin();
+        $this->auth->setMfaSecret('admin@example.com', 'JBSWY3DPEHPK3PXP');
+        $this->auth->enableMfa('admin@example.com', BackupCodeGenerator::hashAll(['AAAAA-11111']));
+
+        $this->assertFalse($this->auth->consumeBackupCode('admin@example.com', BackupCodeGenerator::normalize('ZZZZZ-99999')));
+        $this->assertSame(1, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
     }
 }

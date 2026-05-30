@@ -32,6 +32,34 @@ class AdminTest extends TestCase
 
         $this->sendRequest('POST', '/deleteuser/test@example.com');
         $this->assertStatus(404);
+
+        // reset_mfa is an admin-only destructive action too; guests must not
+        // reach it.
+        $this->sendRequest('POST', '/admin/users/jane@example.com/reset_mfa');
+        $this->assertStatus(404);
+    }
+
+    public function testSignedInNonAdminCannotPerformUserActions()
+    {
+        // A regular authenticated user (role "user") must be gated out of every
+        // admin endpoint by ROLE, not merely by being unauthenticated. This
+        // catches a guard that checks "is logged in" instead of "is admin".
+        $this->signIn('john@example.com', 'john123');
+
+        $this->sendRequest('GET', '/listusers');
+        $this->assertStatus(404);
+
+        $this->sendRequest('POST', '/storeuser');
+        $this->assertStatus(404);
+
+        $this->sendRequest('POST', '/updateuser/jane@example.com');
+        $this->assertStatus(404);
+
+        $this->sendRequest('POST', '/deleteuser/jane@example.com');
+        $this->assertStatus(404);
+
+        $this->sendRequest('POST', '/admin/users/jane@example.com/reset_mfa');
+        $this->assertStatus(404);
     }
 
     public function testListUsers()
@@ -147,6 +175,17 @@ class AdminTest extends TestCase
                 'name' => 'Johnny Doe',
             ],
         ]);
+
+        // Re-read /listusers to confirm the change PERSISTED (not just echoed
+        // back in the update response): the old username is gone and the new
+        // record carries the updated role/name.
+        $this->sendRequest('GET', '/listusers');
+        $users = $this->decodeResponseJson()['data'];
+        $byName = array_column($users, null, 'username');
+        $this->assertArrayNotHasKey('john@example.com', $byName);
+        $this->assertArrayHasKey('john2@example.com', $byName);
+        $this->assertSame('admin', $byName['john2@example.com']['role']);
+        $this->assertSame('Johnny Doe', $byName['john2@example.com']['name']);
     }
 
     public function testDeletingUser()
@@ -155,6 +194,15 @@ class AdminTest extends TestCase
 
         $this->sendRequest('POST', '/deleteuser/john@example.com');
         $this->assertOk();
+
+        // Confirm the delete actually persisted — a no-op delete returning 200
+        // would otherwise pass. The user is gone from /listusers and the total
+        // count dropped by one (guest, admin, jane, multi remain).
+        $this->sendRequest('GET', '/listusers');
+        $users = $this->decodeResponseJson()['data'];
+        $usernames = array_column($users, 'username');
+        $this->assertNotContains('john@example.com', $usernames);
+        $this->assertCount(4, $users);
     }
 
     public function testUpdatingNonExistingUser()

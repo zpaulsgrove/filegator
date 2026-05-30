@@ -29,6 +29,6 @@ class ErrorController
 
     public function methodNotAllowed(Response $response)
     {
-        return $this->request_type == 'json' ? $response->json('Not Allowed', 401) : $response->html('Not Found', 401);
+        return $this->request_type == 'json' ? $response->json('Method Not Allowed', 405) : $response->html('Method Not Allowed', 405);
     }
 }

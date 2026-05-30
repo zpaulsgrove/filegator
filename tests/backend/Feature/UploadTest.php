@@ -304,18 +304,114 @@ class UploadTest extends TestCase
         $this->assertStatus(422);
     }
 
+    public function testChunkedUploadReassemblesBytesInOrder()
+    {
+        // Two chunks with distinct, identifiable content. The reassembled file
+        // must equal part1 . part2 exactly — proving order and integrity, not
+        // just final byte count (which the existing size-only test guarantees).
+        $this->signIn('john@example.com', 'john123');
+
+        $part1 = str_repeat('A', 100);
+        $part2 = str_repeat('B', 50);
+        $total = strlen($part1) + strlen($part2);
+
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableTotalChunks' => 2,
+            'resumableTotalSize' => $total,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-ORDER-TEST',
+            'resumableFilename' => 'ordered.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        // chunk 1
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, $part1);
+        fclose($fp);
+        $files = ['file' => new UploadedFile(TEST_FILE, 'ordered.txt', 'text/plain', null, true)];
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        // chunk 2
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, $part2);
+        fclose($fp);
+        $data['resumableChunkNumber'] = 2;
+        $files = ['file' => new UploadedFile(TEST_FILE, 'ordered.txt', 'text/plain', null, true)];
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        $this->assertStringEqualsFile(TEST_REPOSITORY.'/john/ordered.txt', $part1.$part2);
+    }
+
+    public function testUploadCannotTraverseOutsideHomedir()
+    {
+        // John (homedir /john) tries to smuggle a file into Jane's homedir by
+        // setting resumableRelativePath to a traversal sequence. The storage
+        // layer must collapse the `..` and confine the write to John's prefix.
+        $this->signIn('john@example.com', 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        mkdir(TEST_REPOSITORY.'/jane');
+
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, 'pwned');
+        fclose($fp);
+
+        $files = ['file' => new UploadedFile(TEST_FILE, 'evil.txt', 'text/plain', null, true)];
+
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableCurrentChunkSize' => 5,
+            'resumableTotalChunks' => 1,
+            'resumableTotalSize' => 5,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-TRAVERSAL-TEST',
+            'resumableFilename' => 'evil.txt',
+            'resumableRelativePath' => '../../jane',
+        ];
+
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        // Security invariant: the file never lands in Jane's homedir, and never
+        // escapes the repository root.
+        $this->assertFileNotExists(TEST_REPOSITORY.'/jane/evil.txt');
+        $this->assertFileNotExists(TEST_REPOSITORY.'/evil.txt');
+
+        // It is confined to John's own homedir root (the `..` collapsed to '/').
+        $this->assertFileExists(TEST_REPOSITORY.'/john/evil.txt');
+
+        // And Jane, listing her own homedir, sees nothing.
+        $this->signIn('jane@example.com', 'jane123');
+        $this->sendRequest('POST', '/getdir', ['dir' => '/']);
+        $this->assertOk();
+        $this->assertStringNotContainsString('evil.txt', $this->response->getContent());
+    }
+
     public function testFileUploadWithBadName()
     {
         $this->signIn('john@example.com', 'john123');
+
+        // Write a known-size chunk so the assembly condition (chunks_size >=
+        // total_size) fires deterministically. Previously this test relied on
+        // a prior test leaving TEST_FILE large — an order-dependency that broke
+        // in isolation.
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, 'lorem');
+        fclose($fp);
 
         $files = ['file' => new UploadedFile(TEST_FILE, 'sample.txt', 'text/plain', null, true)];
 
         $data = [
             'resumableChunkNumber' => 1,
             'resumableChunkSize' => 1048576,
-            'resumableCurrentChunkSize' => 0.5 * 1024 * 1024,
+            'resumableCurrentChunkSize' => 5,
             'resumableTotalChunks' => 1,
-            'resumableTotalSize' => 0.5 * 1024 * 1024,
+            'resumableTotalSize' => 5,
             'resumableType' => 'text/plain',
             'resumableIdentifier' => 'CHUNKS-SIMPLE-TEST',
             'resumableFilename' => "../\\s\"u<:>pe////rm?*|an\\.t\txt../;",

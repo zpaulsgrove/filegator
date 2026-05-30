@@ -16,9 +16,14 @@ use OTPHP\TOTP;
 use PHPUnit\Framework\TestCase;
 
 /**
+ * Unit coverage for BackupCodeGenerator (shape, uniqueness, hashing, normalize)
+ * and a sanity check of the underlying OTPHP TOTP behaviour. Renamed from
+ * MfaServiceTest, whose name implied — but never provided — MfaService coverage
+ * (that lives in the Feature/MfaTest integration suite).
+ *
  * @internal
  */
-class MfaServiceTest extends TestCase
+class BackupCodeGeneratorTest extends TestCase
 {
     use PasswordHash;
 

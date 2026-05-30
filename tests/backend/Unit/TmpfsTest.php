@@ -144,6 +144,79 @@ class TmpfsTest extends TestCase
         $this->assertFileExists(TEST_TMP_PATH.'old.txt');
     }
 
+    public function testAddIfAbsentCreatesOnceAndRejectsDuplicate()
+    {
+        // First caller wins (file did not exist) and the payload is written.
+        $this->assertTrue($this->service->addIfAbsent('marker', 'first'));
+        $this->assertEquals('first', $this->service->read('marker'));
+
+        // Second caller observes the existing marker and is rejected; the
+        // original payload is left untouched (no clobber of the winner).
+        $this->assertFalse($this->service->addIfAbsent('marker', 'second'));
+        $this->assertEquals('first', $this->service->read('marker'));
+
+        // A different key is unaffected by the first marker.
+        $this->assertTrue($this->service->addIfAbsent('other'));
+    }
+
+    public function testAddIfAbsentDefaultsToSentinelByte()
+    {
+        $this->assertTrue($this->service->addIfAbsent('flag'));
+        $this->assertEquals('1', $this->service->read('flag'));
+    }
+
+    public function testAddIfAbsentFailsClosedWhenPathUnopenable()
+    {
+        // Point the adapter at a directory that does not exist so fopen('x')
+        // cannot create the marker. The replay-guard contract is fail-closed:
+        // an un-creatable marker must report false, never silently "absent".
+        $this->setServicePath(TEST_TMP_PATH.'missing_subdir/');
+
+        $this->assertFalse($this->service->addIfAbsent('marker'));
+    }
+
+    public function testIncrementCounterIfBelowCountsUpThenCapsAtMax()
+    {
+        // Each successful call returns the new count and grows the file by one
+        // byte; once the cap is reached every further call fails closed (-1).
+        $this->assertSame(1, $this->service->incrementCounterIfBelow('c', 3));
+        $this->assertSame(1, strlen($this->service->read('c')));
+
+        $this->assertSame(2, $this->service->incrementCounterIfBelow('c', 3));
+        $this->assertSame(3, $this->service->incrementCounterIfBelow('c', 3));
+        $this->assertSame(3, strlen($this->service->read('c')));
+
+        // At the cap: rejected, and the counter is NOT advanced past max.
+        $this->assertSame(-1, $this->service->incrementCounterIfBelow('c', 3));
+        $this->assertSame(-1, $this->service->incrementCounterIfBelow('c', 3));
+        $this->assertSame(3, strlen($this->service->read('c')));
+    }
+
+    public function testIncrementCounterIfBelowRejectsWhenMaxIsZero()
+    {
+        $this->assertSame(-1, $this->service->incrementCounterIfBelow('z', 0));
+    }
+
+    public function testIncrementCounterIfBelowFailsClosedWhenPathUnopenable()
+    {
+        // Un-openable counter file must fail closed (limit-exceeded), never
+        // grant an increment — otherwise a throttle silently disables itself.
+        $this->setServicePath(TEST_TMP_PATH.'missing_subdir/');
+
+        $this->assertSame(-1, $this->service->incrementCounterIfBelow('c', 5));
+    }
+
+    /**
+     * Repoint the adapter's storage directory without re-running init() (which
+     * would create the directory). Used to exercise the fail-closed branches.
+     */
+    private function setServicePath(string $path): void
+    {
+        $ref = new \ReflectionProperty(Tmpfs::class, 'path');
+        $ref->setAccessible(true);
+        $ref->setValue($this->service, $path);
+    }
+
     public function testSanitizeFilename()
     {
         // regular

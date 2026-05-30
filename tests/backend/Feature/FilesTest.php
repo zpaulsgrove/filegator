@@ -605,6 +605,76 @@ class FilesTest extends TestCase
         $this->assertFileExists(TEST_REPOSITORY.'/jane/two.txt');
         $this->assertDirectoryExists(TEST_REPOSITORY.'/jane/onetwo');
         $this->assertFileExists(TEST_REPOSITORY.'/jane/onetwo/three.txt');
+
+        // Content integrity: extracted bytes must match the archive entries,
+        // not merely exist (a truncated/empty extraction would pass otherwise).
+        $this->assertStringEqualsFile(TEST_REPOSITORY.'/jane/one.txt', "content1\n");
+        $this->assertStringEqualsFile(TEST_REPOSITORY.'/jane/two.txt', "content2\n");
+        $this->assertStringEqualsFile(TEST_REPOSITORY.'/jane/onetwo/three.txt', "content3\n");
+    }
+
+    public function testUnzipCannotEscapeHomedirViaZipSlip()
+    {
+        // A crafted archive whose entries use `../` traversal must NOT be able
+        // to write outside the unzip destination / the caller's homedir.
+        $this->signIn('john@example.com', 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        mkdir(TEST_REPOSITORY.'/jane');
+
+        $zip_path = TEST_REPOSITORY.'/john/evil.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zip_path, \ZipArchive::CREATE);
+        $zip->addFromString('../jane/evil.txt', 'pwned');       // sibling homedir
+        $zip->addFromString('../../escape.txt', 'pwned');       // repository root
+        $zip->addFromString('safe.txt', 'ok');                  // legitimate entry
+        $zip->close();
+
+        // The uncompress may legitimately neutralize, skip, or throw on the
+        // hostile entries; any of those is acceptable as long as the security
+        // invariant below holds. A thrown exception is a safe outcome too.
+        try {
+            $this->sendRequest('POST', '/unzipitem', [
+                'item' => '/evil.zip',
+                'destination' => '/',
+            ]);
+        } catch (\Exception $e) {
+            // tolerated — see above
+        }
+
+        // Security invariant: nothing escaped John's homedir.
+        $this->assertFileNotExists(TEST_REPOSITORY.'/jane/evil.txt');
+        $this->assertFileNotExists(TEST_REPOSITORY.'/escape.txt');
+
+        // Jane, listing her own homedir, must not see the smuggled file.
+        $this->signIn('jane@example.com', 'jane123');
+        $this->sendRequest('POST', '/getdir', ['dir' => '/']);
+        $this->assertOk();
+        $this->assertStringNotContainsString('evil.txt', $this->response->getContent());
+    }
+
+    public function testDownloadStreamsExactFileBytes()
+    {
+        // The download endpoint is otherwise asserted only via headers; the
+        // streamed body is never checked. Capture the callback output and
+        // compare byte-for-byte (including a NUL and high bytes) against source.
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+        $contents = "the quick brown fox\n\x00\x01\x02\xff binary-ish tail";
+        file_put_contents(TEST_REPOSITORY.'/john/payload.bin', $contents);
+
+        $this->sendRequest('GET', '/download', ['path' => base64_encode('/payload.bin')]);
+
+        // Two nested output buffers: the callback's own ob_flush() moves data
+        // from the inner buffer into the outer one we read from.
+        ob_start();
+        ob_start();
+        $this->streamedResponse->sendContent();
+        ob_end_flush();
+        $body = ob_get_clean();
+
+        $this->assertSame($contents, $body);
+        $this->assertEquals(strlen($contents), $this->streamedResponse->headers->get('content-length'));
     }
 
     public function testDownloadMultipleItems()

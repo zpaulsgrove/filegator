@@ -42,7 +42,7 @@ class AdminStepUpTest extends TestCase
 
     protected function totpFor(string $secret): string
     {
-        return TOTP::createFromSecret($secret)->now();
+        return $this->totpNow($secret);
     }
 
     /**
@@ -119,6 +119,10 @@ class AdminStepUpTest extends TestCase
             'stepup_code' => $this->totpFor($info['secret']),
         ]);
         $this->assertOk();
+
+        // Side effect: the user was actually created, not just gated through.
+        $app = $this->sendRequest('GET', '/getuser');
+        $this->assertNotNull($app->resolve(AuthInterface::class)->find('brandnew@example.com'));
     }
 
     public function testUpdateUserStepUpAcceptsCorrectAdminCredentials()
@@ -135,6 +139,10 @@ class AdminStepUpTest extends TestCase
             'stepup_code' => $this->totpFor($info['secret']),
         ]);
         $this->assertOk();
+
+        // Side effect: the rename actually persisted.
+        $app = $this->sendRequest('GET', '/getuser');
+        $this->assertSame('Renamed John', $app->resolve(AuthInterface::class)->find('john@example.com')->getName());
     }
 
     public function testDeleteUserStepUpAcceptsCorrectAdminCredentials()

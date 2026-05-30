@@ -11,6 +11,8 @@
 namespace Tests\Feature;
 
 use Exception;
+use Filegator\Services\Auth\AuthInterface;
+use Filegator\Services\Auth\User;
 use Tests\TestCase;
 
 /**
@@ -22,6 +24,13 @@ class FilesTest extends TestCase
 
     protected function setUp(): void
     {
+        // parent::setUp() resets the shared static MockUsers store (and the
+        // mailer/lockfile state). Without it, a test file that mutates users
+        // earlier in the run (e.g. AdminTest deleting/renaming john, which
+        // sorts before FilesTest) leaks into here and makes signIn() fail
+        // with a 404. resetTempDir() then (re)creates the on-disk repository.
+        parent::setUp();
+
         $this->resetTempDir();
 
         $this->timestamp = time();
@@ -1044,5 +1053,118 @@ class FilesTest extends TestCase
         // And the file is physically inside multiA, not multiB.
         $this->assertFileExists(TEST_REPOSITORY.'/multiA/isolation-marker.txt');
         $this->assertFileNotExists(TEST_REPOSITORY.'/multiB/isolation-marker.txt');
+    }
+
+    // --------------------------------------------------------------------
+    // chmod operation. No default-fixture user carries the 'chmod'
+    // permission, so we add a chmod-capable user at runtime (via the live
+    // auth adapter) rather than mutating the shared MockUsers fixture.
+    // --------------------------------------------------------------------
+
+    public function testChmodItemsChangesFilePermissions()
+    {
+        // Provision a chmod-capable user without touching the shared fixture.
+        $app = $this->sendRequest('GET', '/getuser');
+        $auth = $app->resolve(AuthInterface::class);
+
+        $cu = new User();
+        $cu->setRole('user');
+        $cu->setHomedir('/cu');
+        $cu->setUsername('cu@example.com');
+        $cu->setName('Chmod User');
+        $cu->setPermissions(['read', 'write', 'chmod']);
+        $auth->add($cu, 'cu12345');
+
+        $this->signIn('cu@example.com', 'cu12345');
+
+        mkdir(TEST_REPOSITORY.'/cu');
+        $target = TEST_REPOSITORY.'/cu/perm.txt';
+        touch($target);
+        chmod($target, 0644);
+
+        $this->sendRequest('POST', '/chmoditems', [
+            'items' => [
+                0 => [
+                    'type' => 'file',
+                    'path' => '/perm.txt',
+                    'name' => 'perm.txt',
+                ],
+            ],
+            'permissions' => '0600',
+        ]);
+
+        $this->assertOk();
+        clearstatcache();
+        $this->assertSame('0600', substr(sprintf('%o', fileperms($target)), -4));
+    }
+
+    public function testChmodItemsRejectedWithoutChmodPermission()
+    {
+        // john has read/write/upload/download/batchdownload but NOT chmod.
+        $this->signIn('john@example.com', 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/perm.txt');
+
+        $this->sendRequest('POST', '/chmoditems', [
+            'items' => [
+                0 => ['type' => 'file', 'path' => '/perm.txt', 'name' => 'perm.txt'],
+            ],
+            'permissions' => '0600',
+        ]);
+
+        $this->assertStatus(404);
+    }
+
+    // --------------------------------------------------------------------
+    // Per-operation permission enforcement. jane has only ['read','write'],
+    // so operations gated on zip / batchdownload must be rejected for her
+    // (the router fails closed with a 404 before the controller runs).
+    // --------------------------------------------------------------------
+
+    public function testUserWithoutZipPermissionCannotZipItems()
+    {
+        $this->signIn('jane@example.com', 'jane123');
+
+        mkdir(TEST_REPOSITORY.'/jane');
+        touch(TEST_REPOSITORY.'/jane/jane.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/zipitems', [
+            'items' => [
+                0 => ['type' => 'file', 'path' => '/jane.txt', 'name' => 'jane.txt'],
+            ],
+            'destination' => '/',
+            'name' => 'archive.zip',
+        ]);
+
+        $this->assertStatus(404);
+    }
+
+    public function testUserWithoutZipPermissionCannotUnzipItem()
+    {
+        $this->signIn('jane@example.com', 'jane123');
+
+        $this->sendRequest('POST', '/unzipitem', [
+            'item' => '/archive.zip',
+            'destination' => '/',
+        ]);
+
+        $this->assertStatus(404);
+    }
+
+    public function testUserWithoutBatchdownloadPermissionCannotBatchDownload()
+    {
+        $this->signIn('jane@example.com', 'jane123');
+
+        mkdir(TEST_REPOSITORY.'/jane');
+        touch(TEST_REPOSITORY.'/jane/jane.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/batchdownload', [
+            'items' => [
+                0 => ['type' => 'file', 'path' => '/jane.txt', 'name' => 'jane.txt'],
+            ],
+        ]);
+
+        $this->assertStatus(404);
     }
 }

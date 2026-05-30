@@ -342,4 +342,33 @@ class UploadTest extends TestCase
             ],
         ]);
     }
+
+    public function testUserWithoutUploadPermissionCannotUpload()
+    {
+        // jane has only ['read','write'] — no 'upload'. The route guard must
+        // reject before the controller runs (fails closed with 404).
+        $this->signIn('jane@example.com', 'jane123');
+
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, 'a');
+        fclose($fp);
+
+        $files = ['file' => new UploadedFile(TEST_FILE, 'sample.txt', 'text/plain', null, true)];
+
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableCurrentChunkSize' => 0.5 * 1024 * 1024,
+            'resumableTotalChunks' => 1,
+            'resumableTotalSize' => 0.5 * 1024 * 1024,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-NOPERM-TEST',
+            'resumableFilename' => 'sample.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        $this->sendRequest('POST', '/upload', $data, $files);
+
+        $this->assertStatus(404);
+    }
 }

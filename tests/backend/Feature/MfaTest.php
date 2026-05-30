@@ -1135,4 +1135,41 @@ class MfaTest extends TestCase
         $this->assertSame('john@example.com', $data['username']);
         $this->assertSame('user', $data['role']);
     }
+
+    // ---------------------------------------------------------------------
+    // /login/mfa/cancel — abandons a pending MFA challenge so the user can
+    // back out (e.g. wrong account) without a stale half-authenticated
+    // session. After cancel, the previously issued nonce must no longer
+    // complete the login.
+    // ---------------------------------------------------------------------
+
+    public function testLoginMfaCancelClearsPendingChallenge()
+    {
+        $info = $this->enrollMfa('john@example.com');
+
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'john123',
+        ]);
+        $this->captureSession();
+        $nonce = $this->lastMfaNonce();
+        $this->assertNotSame('', $nonce);
+
+        // Cancel the pending challenge.
+        $this->sendRequest('POST', '/login/mfa/cancel');
+        $this->assertOk();
+        $this->captureSession();
+
+        // A correct TOTP + the original nonce must now be rejected because the
+        // pending state was cleared.
+        $this->sendRequest('POST', '/login/mfa', [
+            'code' => $this->totpFor($info['secret']),
+            'mfa_nonce' => $nonce,
+        ]);
+        $this->assertUnprocessable();
+
+        // And the session is still anonymous.
+        $this->sendRequest('GET', '/getuser');
+        $this->assertSame('guest', $this->decodeResponseJson()['data']['role']);
+    }
 }

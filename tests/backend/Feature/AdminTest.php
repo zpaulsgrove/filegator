@@ -480,4 +480,99 @@ class AdminTest extends TestCase
             ],
         ]);
     }
+
+    // --------------------------------------------------------------------
+    // Password round-trips: assert the password an admin SETS actually
+    // authenticates afterward, and that an admin-CHANGED password takes
+    // effect (new works, old stops working). The CRUD-shape tests above
+    // only check the response payload, never that the credential works.
+    // --------------------------------------------------------------------
+
+    public function testAdminCreatedUserCanLogInWithSetPassword()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name'        => 'Pat New',
+            'username'    => 'pat@example.com',
+            'role'        => 'user',
+            'permissions' => [],
+            'password'    => 'patsecret1',
+            'homedir'     => '/pat',
+        ]);
+        $this->assertOk();
+
+        // The set password must actually authenticate.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'pat@example.com',
+            'password' => 'patsecret1',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['username' => 'pat@example.com']]);
+
+        // A wrong password must not.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'pat@example.com',
+            'password' => 'not-the-password',
+        ]);
+        $this->assertStatus(422);
+    }
+
+    public function testAdminChangingUserPasswordViaUpdateTakesEffect()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        // updateUser applies a new password only when the field is non-empty.
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'John Doe',
+            'username'    => 'john@example.com',
+            'role'        => 'user',
+            'permissions' => ['read', 'write'],
+            'homedir'     => '/john',
+            'password'    => 'johns-new-pw',
+        ]);
+        $this->assertOk();
+
+        // New password works.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'johns-new-pw',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['username' => 'john@example.com']]);
+
+        // Old password no longer works.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'john123',
+        ]);
+        $this->assertStatus(422);
+    }
+
+    public function testAdminUpdateWithoutPasswordLeavesItUnchanged()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        // Omitting the password field must preserve the existing credential.
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'Johnny',
+            'username'    => 'john@example.com',
+            'role'        => 'user',
+            'permissions' => ['read', 'write'],
+            'homedir'     => '/john',
+        ]);
+        $this->assertOk();
+
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'john123',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['username' => 'john@example.com']]);
+    }
 }

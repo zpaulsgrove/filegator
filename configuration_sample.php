@@ -130,8 +130,12 @@ return [
             'config' => [
                 // Symfony Mailer DSN. Use 'null://null' to disable sending (feature stays hidden).
                 // Examples:
+                //   'postmark+api://POSTMARK_SERVER_TOKEN@default'   (recommended; uses symfony/postmark-mailer, already required)
+                //   'postmark+smtp://POSTMARK_SERVER_TOKEN@default'
                 //   'smtp://user:pass@smtp.example.com:587?encryption=tls'
                 //   'sendmail://default'
+                // NB: with Postmark, every From: address below (and the AuditMailer one)
+                // must be a verified Sender Signature / on a verified domain, or sends fail.
                 'dsn' => 'null://null',
                 'from_email' => 'no-reply@example.com',
                 'from_name' => 'FileGator',

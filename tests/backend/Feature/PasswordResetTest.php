@@ -53,7 +53,29 @@ class PasswordResetTest extends TestCase
         $msg = InMemoryMailer::last();
         $this->assertNotNull($msg);
         $this->assertSame('john@reset.test', $msg['to']);
+        // The configured subject must reach the mailer verbatim — a regression
+        // that drops/garbles it would otherwise ship silently.
+        $this->assertSame('Reset your FileGator password', $msg['subject']);
         $this->assertNotNull($this->tokenFromLastMessage());
+    }
+
+    public function testResetStillReturnsGenericOkWhenMailSendFails()
+    {
+        // A transport failure must not change the externally observable
+        // outcome: the endpoint still returns a generic 200 (no 500, no
+        // enumeration signal) even though no mail went out.
+        InMemoryMailer::$failNextSend = true;
+        $this->setEmail('john@example.com', 'john@reset.test');
+
+        $this->sendRequest('POST', '/password/forgot', ['email' => 'john@reset.test']);
+        $this->assertOk();
+        $this->assertNull(InMemoryMailer::last());
+
+        // The token was still persisted (the failure was in delivery, not in
+        // issuing) — so the row exists on disk even though delivery failed.
+        $this->assertFileExists(TEST_TMP_PATH.'password_resets.json');
+        $rows = json_decode(file_get_contents(TEST_TMP_PATH.'password_resets.json'), true);
+        $this->assertNotEmpty($rows);
     }
 
     public function testBrandingValuesRenderIntoEmail()
@@ -153,6 +175,43 @@ class PasswordResetTest extends TestCase
         $this->assertUnprocessable();
     }
 
+    public function testExpiredTokenIsRejected()
+    {
+        $this->setEmail('john@example.com', 'john@reset.test');
+        $this->sendRequest('POST', '/password/forgot', ['email' => 'john@reset.test']);
+        $token = $this->tokenFromLastMessage();
+        $this->assertNotNull($token);
+
+        // Force the stored token to be expired by rewriting its `expires` field
+        // into the past — exercising the TTL guard without waiting an hour.
+        $file = TEST_TMP_PATH.'password_resets.json';
+        $rows = json_decode(file_get_contents($file), true);
+        foreach ($rows as &$row) {
+            $row['expires'] = time() - 10;
+        }
+        unset($row);
+        file_put_contents($file, json_encode($rows));
+
+        // validate must report the token as invalid...
+        $this->sendRequest('POST', '/password/reset/validate', ['token' => $token]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['valid' => false]]);
+
+        // ...and an actual reset must be refused.
+        $this->sendRequest('POST', '/password/reset', [
+            'token' => $token,
+            'new_password' => 'newSecret123',
+        ]);
+        $this->assertUnprocessable();
+
+        // The expired token did NOT rotate the password — the original still works.
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'john123',
+        ]);
+        $this->assertOk();
+    }
+
     public function testNewTokenInvalidatesPreviousUnusedTokens()
     {
         $this->setEmail('john@example.com', 'john@reset.test');
@@ -247,6 +306,29 @@ class PasswordResetTest extends TestCase
         // so it should still succeed instead of returning 403.
         $this->sendRequest('POST', '/password/forgot', ['email' => 'nobody@example.com']);
         $this->assertOk();
+    }
+
+    public function testValidCsrfTokenIsAccepted()
+    {
+        // The accept path: a non-exempt POST carrying a VALID token must pass
+        // the CSRF gate. Without this, testNonExemptPostIsBlocked... could pass
+        // even if the middleware rejected every token (e.g. a flipped compare).
+        $this->overrideConfig(['services' => ['Filegator\\Services\\Security\\Security' => ['config' => ['csrf_protection' => true]]]]);
+
+        // A GET emits a fresh token in the response header and stores it in the
+        // session; preserve that session for the follow-up POST.
+        $this->sendRequest('GET', '/getconfig');
+        $token = $this->response->headers->get('X-CSRF-Token');
+        $this->assertNotEmpty($token);
+        $this->captureSession();
+
+        $this->sendRequest('POST', '/login', [
+            'username' => 'john@example.com',
+            'password' => 'john123',
+        ], [], ['HTTP_X_CSRF_TOKEN' => $token]);
+
+        // 200 (not 403) proves the token was accepted and login proceeded.
+        $this->assertStatus(200);
     }
 
     public function testNonExemptPostIsBlockedWithoutCsrfToken()

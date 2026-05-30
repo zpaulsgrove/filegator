@@ -407,7 +407,7 @@ class AuditAlertsTest extends TestCase
 
         $this->sendRequest('POST', '/mfa/disable', [
             'password' => 'john123',
-            'code' => TOTP::createFromSecret($secret)->now(),
+            'code' => $this->totpNow($secret),
         ]);
         $this->assertOk();
 

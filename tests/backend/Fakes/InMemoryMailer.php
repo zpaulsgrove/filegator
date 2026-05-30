@@ -27,6 +27,14 @@ class InMemoryMailer implements Service, MailerInterface
      */
     public static int $delayMicroseconds = 0;
 
+    /**
+     * When true, the next send() reports failure (returns false) without
+     * recording a message — simulating an SMTP/transport error so callers'
+     * failure-handling branches can be exercised. Auto-clears after one send
+     * and is reset to false in reset().
+     */
+    public static bool $failNextSend = false;
+
     public function init(array $config = [])
     {
         if (array_key_exists('configured', $config)) {
@@ -41,6 +49,10 @@ class InMemoryMailer implements Service, MailerInterface
 
     public function send(string $to, string $subject, string $textBody, ?string $htmlBody = null, ?string $fromEmail = null, ?string $fromName = null): bool
     {
+        if (self::$failNextSend) {
+            self::$failNextSend = false;
+            return false;
+        }
         if (self::$delayMicroseconds > 0) {
             usleep(self::$delayMicroseconds);
         }
@@ -60,6 +72,7 @@ class InMemoryMailer implements Service, MailerInterface
         self::$messages = [];
         self::$configured = true;
         self::$delayMicroseconds = 0;
+        self::$failNextSend = false;
     }
 
     public static function last(): ?array

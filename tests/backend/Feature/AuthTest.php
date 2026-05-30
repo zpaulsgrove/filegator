@@ -308,7 +308,7 @@ class AuthTest extends TestCase
 
     protected function totpFor(string $secret): string
     {
-        return TOTP::createFromSecret($secret)->now();
+        return $this->totpNow($secret);
     }
 
     protected function johnPasswordIs(string $plain): bool

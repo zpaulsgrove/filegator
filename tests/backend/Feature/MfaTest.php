@@ -38,7 +38,7 @@ class MfaTest extends TestCase
 
     protected function totpFor(string $secret): string
     {
-        return TOTP::createFromSecret($secret)->now();
+        return $this->totpNow($secret);
     }
 
     /**
@@ -180,6 +180,59 @@ class MfaTest extends TestCase
             'mfa_nonce' => $nonce,
         ]);
         $this->assertUnprocessable();
+    }
+
+    public function testBackupCodeConsumedAtStepUpCannotBeReplayedAtLogin()
+    {
+        // Cross-surface single-use: a backup code spent on an admin step-up
+        // action must be unusable at the MFA login step. Both surfaces share
+        // one backup-code store, so consuming on one must invalidate it on the
+        // other.
+        $codes = ['ABCDE-12345', 'ZZZZZ-99999'];
+        $this->enrollMfa('admin@example.com', null, $codes);
+        $this->establishSessionFor('admin@example.com');
+
+        // Spend the first backup code on a step-up-gated admin action.
+        $this->sendRequest('POST', '/deleteuser/jane@example.com', [
+            'stepup_password' => 'admin123',
+            'stepup_code' => 'ABCDE-12345',
+            'stepup_use_backup' => true,
+        ]);
+        $this->assertOk();
+
+        // Fresh login session, reach the MFA step.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'admin@example.com',
+            'password' => 'admin123',
+        ]);
+        $this->captureSession();
+        $nonce = $this->lastMfaNonce();
+
+        // The already-spent code is rejected at login.
+        $this->sendRequest('POST', '/login/mfa', [
+            'code' => 'ABCDE-12345',
+            'use_backup' => true,
+            'mfa_nonce' => $nonce,
+        ]);
+        $this->assertUnprocessable();
+
+        // Vacuity guard: a still-unused code completes a fresh login, proving
+        // the rejection above was specific to the consumed code — not a broken
+        // backup-code-login path.
+        $this->signOut();
+        $this->sendRequest('POST', '/login', [
+            'username' => 'admin@example.com',
+            'password' => 'admin123',
+        ]);
+        $this->captureSession();
+        $nonce = $this->lastMfaNonce();
+        $this->sendRequest('POST', '/login/mfa', [
+            'code' => 'ZZZZZ-99999',
+            'use_backup' => true,
+            'mfa_nonce' => $nonce,
+        ]);
+        $this->assertOk();
     }
 
     public function testAdminWithoutMfaIsForcedIntoSetupWhenRequired()

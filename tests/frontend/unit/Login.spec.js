@@ -34,6 +34,7 @@ import { shallowMount } from '@vue/test-utils'
 import Login from '@/views/Login.vue'
 
 const api = require('@/api/api').default
+const { routeAfterLogin } = require('@/mixins/postLogin')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,56 @@ describe('Login.vue — MFA nonce round-trip', () => {
     await flushPromises()
 
     expect(wrapper.vm.mfaNonce).toBe('')
+  })
+
+})
+
+describe('Login.vue — login() branching', () => {
+
+  it('plain success commits the user and routes (no MFA step)', async () => {
+    const user = { username: 'john', role: 'user', homedirs: ['/'], active_homedir: '/' }
+    api.login.mockResolvedValue(user)
+
+    const wrapper = mountLogin()
+    wrapper.vm.username = 'john'
+    wrapper.vm.password = 'pw'
+    wrapper.vm.login()
+    await flushPromises()
+
+    expect(wrapper.vm.$store.commit).toHaveBeenCalledWith('setUser', user)
+    expect(routeAfterLogin).toHaveBeenCalled()
+    expect(wrapper.vm.step).toBe('password')
+  })
+
+  it('mfa_setup_required moves to the setup step and stores enrollment + nonce', async () => {
+    api.login.mockResolvedValue({
+      mfa_setup_required: true,
+      mfa_nonce: 'NONCE',
+      enrollment: { secret: 'S', otpauth_uri: 'otpauth://x' },
+    })
+
+    const wrapper = mountLogin()
+    wrapper.vm.login()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('mfa_setup')
+    expect(wrapper.vm.mfaNonce).toBe('NONCE')
+    expect(wrapper.vm.enrollment).toEqual({ secret: 'S', otpauth_uri: 'otpauth://x' })
+    // No user committed yet — setup must complete first.
+    expect(wrapper.vm.$store.commit).not.toHaveBeenCalledWith('setUser', expect.anything())
+  })
+
+  it('maps a structured server error into the inline error and clears the password', async () => {
+    api.login.mockRejectedValue({ response: { data: { data: 'Login failed' } } })
+
+    const wrapper = mountLogin()
+    wrapper.vm.password = 'secret'
+    wrapper.vm.login()
+    await flushPromises()
+
+    expect(wrapper.vm.error).toBe('Login failed')
+    expect(wrapper.vm.password).toBe('')
+    expect(routeAfterLogin).not.toHaveBeenCalled()
   })
 
 })

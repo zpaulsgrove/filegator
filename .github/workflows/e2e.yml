@@ -31,7 +31,7 @@ jobs:
       # selectors exist in dist), with-e2e-config.js swaps in the seam
       # config, start-server-and-test boots `php -S` and runs specs headless.
       - name: Run E2E suite
-        uses: cypress-io/github-action@v6
+        uses: cypress-io/github-action@f790eee7a50d9505912f50c2095510be7de06aa7 # v6.10.9
         with:
           command: npm run test:e2e
 
@@ -42,7 +42,7 @@ jobs:
       # the specs-mfa-required/ specs. Deps + Cypress binary are already
       # installed by the step above, so install: false.
       - name: Run E2E suite (forced MFA setup)
-        uses: cypress-io/github-action@v6
+        uses: cypress-io/github-action@f790eee7a50d9505912f50c2095510be7de06aa7 # v6.10.9
         with:
           install: false
           command: npm run test:e2e:mfa-required

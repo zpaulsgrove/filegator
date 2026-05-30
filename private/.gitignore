@@ -3,3 +3,4 @@
 /password_resets.json
 /mfa_encryption.key
 /audit_state.json
+/users.json.mfa.blank

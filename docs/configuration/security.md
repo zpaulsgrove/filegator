@@ -116,3 +116,22 @@ The four admin endpoints (and the self-service `/mfa/disable` and `/mfa/backup_c
 | `429` string `"Not Allowed"` | Per-IP or per-username lockout active | Back off; wait `lockout_timeout` seconds |
 
 Note: the self-service endpoints (`/mfa/disable`, `/mfa/backup_codes/regenerate`) use the legacy field names `password` + `code` + `use_backup` rather than the `stepup_*` prefix; the response shape is identical.
+
+## Accepted dependency risks
+
+Some advisories that scanners flag against the frontend dependency tree are left unpatched on purpose, because the proportionate fix is worse than the exposure. Each is documented here so the decision is discoverable rather than silently ignored.
+
+### webpack-dev-server — CVE-2025-30360 (Medium, dev-only)
+
+`webpack-dev-server` 3.11.3 is affected by CVE-2025-30360: a developer's source code can be stolen if they visit a malicious site in a **non-Chromium** browser while the dev server is running (the `Origin` check allows IP-address origins, enabling cross-site WebSocket hijacking).
+
+**Why it's accepted:** `webpack-dev-server` is a **dev-only, transitive** dependency — pulled in by `@vue/cli-service` and used **only** by `vue-cli-service serve` (the `serve` npm script). It is **not present in the production `build` output** (`ci-static.yml` ships static `dist/` artifacts and removes `node_modules` before packaging), so there is **zero production attack surface**. The exploit only reaches a developer's own machine, in a non-Chromium browser, during an active dev session.
+
+**Why it's not patched:** the fix is in `webpack-dev-server` 5.2.1, which requires **webpack 5**. This project is on **webpack 4 / Vue CLI 4**, and there is no path to 5.2.1 while on Vue CLI:
+
+- Forcing 5.2.1 via an npm `overrides` entry breaks `vue-cli-service serve` — webpack-dev-server 4/5 renamed/removed options and changed `proxy` to an array (the [`vue.config.js`](vue.config.js) `devServer.proxy` object form is the v3/v4 shape v5 no longer accepts), and v5 needs webpack 5 anyway.
+- A full Vue CLI 4 → 5 migration only lands on `webpack-dev-server` **4.15.2**, which is **itself still vulnerable** to this CVE — so the large migration would not even clear the advisory.
+
+**Long-term remediation:** migrate the frontend build off Vue CLI (in maintenance mode) to **Vite**, which removes `webpack-dev-server` from the tree entirely. Tracked as a follow-up.
+
+**Developer mitigation in the meantime:** run the dev server in a **Chromium-based** browser (the `Origin` issue does not apply), and avoid untrusted sites during dev sessions.

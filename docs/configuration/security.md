@@ -75,6 +75,18 @@ When the acting admin has MFA enrolled, the following endpoints require a fresh 
 
 When the acting admin has no MFA enrolled, step-up is a no-op (no behaviour change for deploys that haven't enabled `mfa_required_for_admins`).
 
+### Disabling the admin step-up gate (`step_up_auth`)
+
+The top-level `step_up_auth` config flag (default `true`) makes the admin-panel step-up gate optional. When set to `false`, the four endpoints above accept the session cookie alone — no `stepup_password` / `stepup_code` is required even for an MFA-enrolled admin, and the SPA skips the step-up dialog entirely (the flag is published on `GET /getconfig`).
+
+```php
+'step_up_auth' => false, // top-level key, beside 'mfa_required_for_admins'
+```
+
+This is the escape hatch for the per-write TOTP friction described above (every sensitive admin action otherwise burns one code). **Tradeoff:** disabling it means a stolen or hijacked admin session can create, modify, delete users and reset other users' MFA without re-proving the second factor. Leave it `true` unless that friction is a concrete operational problem and the session-theft risk is acceptable for your deployment.
+
+The flag governs **only** the admin CRUD + reset-MFA gate. Self-service step-up — `POST /mfa/disable`, `POST /mfa/backup_codes/regenerate`, `POST /me/email`, and the change-password second factor on the Profile screen — is unaffected and still requires the second factor when MFA is enrolled.
+
 ### LDAP and WPAuth: dialog appears but password is not verified server-side
 
 The `RequiresStepUpAuth` trait gates on `instanceof MfaCapableInterface`. Only the bundled `JsonFile` adapter implements that interface; `LDAP` and `WPAuth` do not. On those adapters, the trait early-returns `ok=true` for the entire step-up flow — including any `stepup_password` the frontend sent.

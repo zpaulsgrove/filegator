@@ -10,6 +10,7 @@
 
 namespace Filegator\Controllers;
 
+use Filegator\Config\Config;
 use Filegator\Kernel\Request;
 use Filegator\Kernel\Response;
 use Filegator\Services\Audit\AuditMailer;
@@ -71,7 +72,7 @@ class AdminController
         return $response->json($rows);
     }
 
-    public function storeUser(User $user, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout)
+    public function storeUser(User $user, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)
     {
         // Pre-validation FIRST so a malformed request does not burn a TOTP /
         // backup code on the step-up gate that fires next. No state changes
@@ -103,7 +104,7 @@ class AdminController
             return $response->json(['username' => 'Username already taken'], 422);
         }
 
-        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout);
+        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
         if (! $check['ok']) return;
         $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
 
@@ -139,7 +140,7 @@ class AdminController
         return $response->json($ret);
     }
 
-    public function updateUser($username, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout)
+    public function updateUser($username, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)
     {
         // Pre-validation FIRST so malformed / no-op requests do not burn a
         // TOTP / backup code on the step-up gate that fires next. No state
@@ -176,7 +177,7 @@ class AdminController
             return $response->json(['email' => 'Invalid email address'], 422);
         }
 
-        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout);
+        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
         if (! $check['ok']) return;
         $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
 
@@ -224,7 +225,7 @@ class AdminController
         }
     }
 
-    public function deleteUser($username, Request $request, Response $response, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout)
+    public function deleteUser($username, Request $request, Response $response, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)
     {
         // Pre-validation FIRST so a missing-target or guest-target attempt
         // does not burn a TOTP / backup code on the step-up gate.
@@ -234,7 +235,7 @@ class AdminController
             return $response->json('User not found', 422);
         }
 
-        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout);
+        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
         if (! $check['ok']) return;
         $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
 
@@ -254,7 +255,7 @@ class AdminController
         return $response->json($ret);
     }
 
-    public function resetMfa($username, Request $request, Response $response, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout)
+    public function resetMfa($username, Request $request, Response $response, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)
     {
         if (! $this->auth instanceof MfaCapableInterface) {
             return $response->json('Not supported', 501);
@@ -273,7 +274,7 @@ class AdminController
             return $response->json('User not found', 422);
         }
 
-        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout);
+        $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
         if (! $check['ok']) return;
         $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
 
@@ -308,9 +309,19 @@ class AdminController
      * names so they don't collide with storeUser's `password` field for the
      * new user being created). Trait degrades to a no-op when the acting
      * admin has no MFA enrolled, so this is safe on every admin endpoint.
+     *
+     * The whole admin-panel step-up gate is also opt-out via the top-level
+     * `step_up_auth` flag (default true). When disabled, deployments accept
+     * the reduced posture (a stolen admin session can do user CRUD without
+     * re-auth) in exchange for not burning a TOTP on every admin write.
+     * Self-service step-up (MfaController / AuthController) is unaffected.
      */
-    protected function stepUpForAdmin(Request $request, Response $response, MfaService $mfa, MfaLockout $lockout): array
+    protected function stepUpForAdmin(Request $request, Response $response, MfaService $mfa, MfaLockout $lockout, Config $config): array
     {
+        if (! (bool) $config->get('step_up_auth', true)) {
+            return ['ok' => true, 'used_backup' => false];
+        }
+
         $current = $this->auth->user();
         $username = $current ? $current->getUsername() : '';
         if ($username === '') {

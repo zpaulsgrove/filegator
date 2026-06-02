@@ -31,6 +31,8 @@ class ViewController
         $frontend['password_reset_enabled'] = $mailer->isConfigured() && $reset->isConfigured();
         $frontend['password_reset_token_ttl'] = (int) $config->get('password_reset_token_ttl', 3600);
         $frontend['mfa_required_for_admins'] = (bool) $config->get('mfa_required_for_admins', true);
+        // Lets the SPA skip the admin step-up dialog entirely when the gate is off.
+        $frontend['step_up_auth'] = (bool) $config->get('step_up_auth', true);
         return $response->json($frontend);
     }
 }

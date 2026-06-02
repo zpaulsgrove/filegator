@@ -202,4 +202,29 @@ describe('withStepUp', () => {
     expect(isStepUpCancelled(null)).toBeFalsy()
     expect(isStepUpCancelled(undefined)).toBeFalsy()
   })
+
+  // 11. step_up_auth disabled: bypass the dialog, run the action directly.
+  it('skips the dialog and runs the action with no creds when config.step_up_auth is false', async () => {
+    const vm = makeVm()
+    vm.$store.state.config = { step_up_auth: false }
+    const action = jest.fn().mockResolvedValue('done')
+
+    const result = await withStepUp(vm, { actionDescription: 'Delete user', action })
+
+    expect(vm.$modal.open).not.toHaveBeenCalled()
+    expect(api.getUser).not.toHaveBeenCalled()
+    expect(action).toHaveBeenCalledTimes(1)
+    expect(action).toHaveBeenCalledWith({})
+    expect(result).toBe('done')
+  })
+
+  // 12. step_up_auth enabled (explicit true) still opens the dialog.
+  it('opens the dialog when config.step_up_auth is true', async () => {
+    const vm = makeVm()
+    vm.$store.state.config = { step_up_auth: true }
+    withStepUp(vm, { actionDescription: 'Test', action: jest.fn() })
+    await flushPromises()
+
+    expect(vm.$modal.open).toHaveBeenCalledTimes(1)
+  })
 })

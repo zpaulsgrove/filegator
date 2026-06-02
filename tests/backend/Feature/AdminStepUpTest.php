@@ -436,4 +436,99 @@ class AdminStepUpTest extends TestCase
 
         $this->assertSame($before, $after);
     }
+
+    // ---------------------------------------------------------------------
+    // step_up_auth => false: the admin-panel gate becomes a no-op even for an
+    // MFA-enrolled admin. The CRUD requests that 422 above (no stepup_* fields)
+    // now succeed. Self-service step-up is governed separately and unaffected.
+    // ---------------------------------------------------------------------
+
+    public function testStoreUserSucceedsWithoutStepUpWhenDisabled()
+    {
+        $this->overrideConfig(['step_up_auth' => false]);
+        $this->signInMfaAdmin();
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'No Stepup',
+            'username' => 'nostepup@example.com',
+            'password' => 'newuserpw',
+            'homedirs' => ['/'],
+            'role' => 'user',
+            'permissions' => [],
+        ]);
+        $this->assertOk();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $this->assertNotNull($app->resolve(AuthInterface::class)->find('nostepup@example.com'));
+    }
+
+    public function testUpdateUserSucceedsWithoutStepUpWhenDisabled()
+    {
+        $this->overrideConfig(['step_up_auth' => false]);
+        $this->signInMfaAdmin();
+
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name' => 'Renamed No Stepup',
+            'username' => 'john@example.com',
+            'homedirs' => ['/'],
+            'role' => 'user',
+            'permissions' => [],
+        ]);
+        $this->assertOk();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $this->assertSame('Renamed No Stepup', $app->resolve(AuthInterface::class)->find('john@example.com')->getName());
+    }
+
+    public function testDeleteUserSucceedsWithoutStepUpWhenDisabled()
+    {
+        $this->overrideConfig(['step_up_auth' => false]);
+        $this->signInMfaAdmin();
+
+        $this->sendRequest('POST', '/deleteuser/john@example.com');
+        $this->assertOk();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $this->assertNull($app->resolve(AuthInterface::class)->find('john@example.com'));
+    }
+
+    public function testResetMfaSucceedsWithoutStepUpWhenDisabled()
+    {
+        $app = $this->sendRequest('GET', '/getuser');
+        $auth = $app->resolve(AuthInterface::class);
+        $auth->setMfaSecret('john@example.com', TOTP::create()->getSecret());
+        $auth->enableMfa('john@example.com', BackupCodeGenerator::hashAll(['ABCDE-12345']));
+
+        $this->overrideConfig(['step_up_auth' => false]);
+        $this->signInMfaAdmin();
+
+        $this->sendRequest('POST', '/admin/users/john@example.com/reset_mfa');
+        $this->assertOk();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $state = $app->resolve(AuthInterface::class)->getMfaState('john@example.com');
+        $this->assertFalse($state['enabled']);
+    }
+
+    public function testStepUpDisabledDoesNotConsumeBackupCode()
+    {
+        $this->overrideConfig(['step_up_auth' => false]);
+        $info = $this->signInMfaAdmin();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $before = $app->resolve(AuthInterface::class)->getMfaState('admin@example.com')['backup_codes_remaining'];
+
+        // Even if a client still sends step-up fields, the disabled gate
+        // short-circuits before any code is verified or consumed.
+        $this->sendRequest('POST', '/deleteuser/john@example.com', [
+            'stepup_password' => 'admin123',
+            'stepup_code' => $info['backup_codes'][0],
+            'stepup_use_backup' => true,
+        ]);
+        $this->assertOk();
+
+        $app = $this->sendRequest('GET', '/getuser');
+        $after = $app->resolve(AuthInterface::class)->getMfaState('admin@example.com')['backup_codes_remaining'];
+        $this->assertSame($before, $after);
+    }
 }

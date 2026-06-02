@@ -157,9 +157,12 @@ If you fronted with Caddy (TLS), keep `cookie_secure` true (matches prod). If yo
 ## 6. Lines that should NOT change from prod
 
 - `mfa_required_for_admins` (line 12) — match prod exactly so UAT exercises the forced-enroll path
+- `step_up_auth` (line 13) — match prod exactly so UAT exercises the same admin step-up behaviour
 - `password_reset_token_ttl`, `_max_per_*` rate limits — match prod
 - Auth adapter, repository adapter — match prod
 - `public_path`, `public_dir` — leave whatever prod uses
+
+> **Toggling admin step-up in prod:** `step_up_auth` defaults to `true`, so the production `configuration.php` (which lives in the **`filegator-infra`** repo) needs no change to keep today's behaviour. To turn the admin-panel step-up gate **off** in prod, add `'step_up_auth' => false,` as a top-level key (beside `mfa_required_for_admins`) in that repo's `configuration.php`. See `docs/configuration/security.md` § "Disabling the admin step-up gate" for the security tradeoff.
 
 ---
 

@@ -479,4 +479,35 @@ describe('Security.vue — characterization tests (Workstream 0)', () => {
     expect(wrapper.vm.emailStepUpOpen).toBe(false)
     expect(api.updateMyEmail).toHaveBeenCalledWith({ email: 'new@example.test' })
   })
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // MFA setup instructions (inline help on the enrollment flow)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  it('shows the "what is MFA" helper on the pre-enrollment screen', async () => {
+    api.mfaState.mockResolvedValue(MFA_DISABLED_STATE)
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    // Not enabled and not mid-enrollment → the v-else (pre-enrollment) branch.
+    expect(wrapper.find('[data-test="security-mfa-about"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="security-enroll-instructions"]').exists()).toBe(false)
+  })
+
+  it('renders numbered setup steps with the example apps during enrollment', async () => {
+    api.mfaState.mockResolvedValue(MFA_DISABLED_STATE)
+    api.mfaBeginEnroll.mockResolvedValue({ secret: 'ABCDEF', otpauth_uri: 'otpauth://totp/x' })
+    const wrapper = mountSecurity()
+    await flushPromises()
+
+    wrapper.vm.beginEnroll()
+    await flushPromises()
+
+    const instructions = wrapper.find('[data-test="security-enroll-instructions"]')
+    expect(instructions.exists()).toBe(true)
+    expect(instructions.findAll('ol li').length).toBe(3)
+    const text = instructions.text()
+    expect(text).toContain('Microsoft Authenticator')
+    expect(text).toContain('1Password')
+  })
 })

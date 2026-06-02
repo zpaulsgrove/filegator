@@ -79,10 +79,20 @@
         </div>
 
         <div v-else-if="enrollment">
-          <p>{{ lang('Scan this QR code with an authenticator app, then enter the 6-digit code.') }}</p>
+          <div class="content" data-test="security-enroll-instructions">
+            <p>{{ lang('To finish enabling MFA:') }}</p>
+            <ol>
+              <li>{{ lang('Download an authenticator app onto your smartphone, such as Microsoft Authenticator, Google Authenticator, Authy, or 1Password.') }}</li>
+              <li>{{ lang('Open the app and scan the QR code below.') }}</li>
+              <li>{{ lang('Enter the 6-digit code the app shows into the field below, then click Verify.') }}</li>
+            </ol>
+          </div>
           <div class="has-text-centered" style="margin: 1em 0">
             <canvas ref="qrCanvas" />
           </div>
+          <p class="has-text-grey is-size-7">
+            {{ lang("Can't scan? Enter this key into the app manually:") }}
+          </p>
           <p style="font-family: monospace; word-break: break-all; font-size: 0.9em">
             {{ lang('Manual key') }}: <span data-test="security-enroll-secret">{{ enrollment.secret }}</span>
           </p>
@@ -102,6 +112,9 @@
 
         <div v-else>
           <p>{{ lang('Add a second factor with a TOTP authenticator app.') }}</p>
+          <p class="has-text-grey is-size-7" data-test="security-mfa-about">
+            {{ lang('Multi-factor authentication adds a one-time code from your phone on top of your password, so your account stays protected even if your password is leaked.') }}
+          </p>
           <br>
           <button class="button is-primary" @click="beginEnroll" data-test="security-enable-mfa">
             {{ lang('Enable MFA') }}

@@ -10,6 +10,7 @@ return [
     'lockout_timeout' => 15, // ip lockout timeout in seconds
 
     'mfa_required_for_admins' => true,           // admins must enroll TOTP on first login
+    'step_up_auth' => true,                      // require admin password+TOTP re-verify on user CRUD / reset-MFA
     'mfa_pending_bind_ua' => true,               // reject /login/mfa if User-Agent differs from /login
     'mfa_pending_bind_ip_prefix' => null,        // 'exact', '/24', '/48', or null to disable IP binding
     'password_reset_token_ttl' => 3600,          // seconds the reset link stays valid

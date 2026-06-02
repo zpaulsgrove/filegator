@@ -27,6 +27,16 @@ async function refreshUserIfStale(vm) {
 }
 
 export default function withStepUp(vm, { actionDescription, dangerWarning = null, action }) {
+  // Admin step-up is opt-out via the `step_up_auth` config flag (default on).
+  // When disabled, skip the /getuser refresh and the dialog entirely and run
+  // the action with no step-up fields — the backend gate is a matching no-op.
+  // Only the admin flows (Users.vue, UserEdit.vue) call withStepUp, so this
+  // mirrors the admin-only backend scope; self-service step-up is unaffected.
+  const enabled = !(vm.$store.state.config && vm.$store.state.config.step_up_auth === false)
+  if (!enabled) {
+    return Promise.resolve(action({}))
+  }
+
   // Refresh first, then open the dialog. Chain rather than wrapping `new Promise(async ...)`
   // — the async-executor pattern silently drops synchronous throws inside the executor.
   return refreshUserIfStale(vm).then(() => new Promise((resolve, reject) => {

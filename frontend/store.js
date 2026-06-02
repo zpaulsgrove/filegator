@@ -12,6 +12,7 @@ export default new Vuex.Store({
       pagination: ['', 5, 10, 15],
       password_reset_enabled: false,
       mfa_required_for_admins: true,
+      step_up_auth: true,
     },
     user: {
       role: 'guest',

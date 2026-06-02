@@ -60,6 +60,7 @@ return [
                             "cookie_samesite" => "Lax",
                             "cookie_secure" => null,
                             "cookie_httponly" => true,
+                            "gc_maxlifetime" => 3600, // idle session timeout in seconds (60 min); resets on each request
                         ], $handler);
                 },
             ],

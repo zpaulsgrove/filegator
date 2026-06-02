@@ -148,9 +148,11 @@ The weekly all-users snapshot (one email per week summarising every active user,
 
 ---
 
-## 5. Session cookie — line ~60
+## 5. Session cookie / timeout — line ~60
 
 If you fronted with Caddy (TLS), keep `cookie_secure` true (matches prod). If you skipped TLS and went plain HTTP on `:8080`, flip it to false for staging or testers can't log in.
+
+Session timeout: the `NativeSessionStorage` options include `"gc_maxlifetime" => 3600` — a 60-minute **idle** timeout (the clock resets on each request, so active users stay logged in; inactive sessions become eligible for cleanup after an hour). Match prod exactly. To change the timeout, edit this one value (seconds) in the production `configuration.php` (in the **filegator-infra** repo) and redeploy. For a hard absolute cap instead of idle, also add `"cookie_lifetime" => 3600`.
 
 ---
 

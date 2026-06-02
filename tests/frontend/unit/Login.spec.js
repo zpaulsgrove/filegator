@@ -55,7 +55,7 @@ const BInputStub = {
 
 // ── Mount helper ──────────────────────────────────────────────────────────────
 
-function mountLogin() {
+function mountLogin(configOverrides = {}) {
   return shallowMount(Login, {
     mocks: {
       lang: (s, ...rest) => (rest.length ? s + ' ' + rest.join(' ') : s),
@@ -65,11 +65,14 @@ function mountLogin() {
             logo: '',
             guest_redirection: '',
             password_reset_enabled: false,
+            ...configOverrides,
           },
         },
         commit: jest.fn(),
       },
-      $router: { push: jest.fn() },
+      // push() is chained with .catch() in the forgot-password handler, so it
+      // must return a thenable.
+      $router: { push: jest.fn(() => Promise.resolve()) },
       $route: { path: '/login' },
       handleError: jest.fn(),
       can: () => false,
@@ -183,6 +186,8 @@ describe('Login.vue — login() branching', () => {
     })
 
     const wrapper = mountLogin()
+    wrapper.vm.username = 'admin'
+    wrapper.vm.password = 'pw'
     wrapper.vm.login()
     await flushPromises()
 
@@ -197,6 +202,7 @@ describe('Login.vue — login() branching', () => {
     api.login.mockRejectedValue({ response: { data: { data: 'Login failed' } } })
 
     const wrapper = mountLogin()
+    wrapper.vm.username = 'john'
     wrapper.vm.password = 'secret'
     wrapper.vm.login()
     await flushPromises()
@@ -204,6 +210,77 @@ describe('Login.vue — login() branching', () => {
     expect(wrapper.vm.error).toBe('Login failed')
     expect(wrapper.vm.password).toBe('')
     expect(routeAfterLogin).not.toHaveBeenCalled()
+  })
+
+})
+
+describe('Login.vue — credentials required, but validated in JS (no native required)', () => {
+
+  // The inputs intentionally carry no HTML5 `required` attribute, so the
+  // browser never fires its "please fill out this field" bubble on stray
+  // clicks. login() enforces the same requirement in JS instead.
+
+  it('username and password inputs are not natively required', () => {
+    const wrapper = mountLogin()
+    // Non-prop attrs fall through to the stub's root <input>; `required`
+    // must be absent on both.
+    expect(wrapper.find('[data-test="login-username"]').attributes('required')).toBeUndefined()
+    expect(wrapper.find('[data-test="login-password"]').attributes('required')).toBeUndefined()
+  })
+
+  it('empty username blocks the API call and shows an inline error', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.username = ''
+    wrapper.vm.password = 'pw'
+
+    wrapper.vm.login()
+    await flushPromises()
+
+    expect(api.login).not.toHaveBeenCalled()
+    expect(wrapper.vm.error).toBe('Please enter your username and password.')
+  })
+
+  it('empty password blocks the API call and shows an inline error', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.username = 'john'
+    wrapper.vm.password = ''
+
+    wrapper.vm.login()
+    await flushPromises()
+
+    expect(api.login).not.toHaveBeenCalled()
+    expect(wrapper.vm.error).toBe('Please enter your username and password.')
+  })
+
+})
+
+describe('Login.vue — forgot links never submit the login form', () => {
+
+  it('"Forgot your username?" is a non-submitting button that toggles help without calling the API', async () => {
+    const wrapper = mountLogin()
+    const btn = wrapper.find('[data-test="login-forgot-username"]')
+
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('type')).toBe('button')
+    expect(wrapper.vm.showUsernameHelp).toBe(false)
+
+    await btn.trigger('click')
+
+    expect(wrapper.vm.showUsernameHelp).toBe(true)
+    expect(api.login).not.toHaveBeenCalled()
+  })
+
+  it('"Forgot password?" is a non-submitting button that routes without requiring credentials', async () => {
+    const wrapper = mountLogin({ password_reset_enabled: true })
+    const btn = wrapper.find('[data-test="login-forgot-password"]')
+
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('type')).toBe('button')
+
+    await btn.trigger('click')
+
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/forgot-password')
+    expect(api.login).not.toHaveBeenCalled()
   })
 
 })

@@ -14,18 +14,18 @@
             </div>
             <br>
             <b-field :label="lang('Username')">
-              <b-input v-model="username" name="username" required @input="error = ''" ref="username" data-test="login-username" />
+              <b-input v-model="username" name="username" @input="error = ''" ref="username" data-test="login-username" />
             </b-field>
             <b-field :label="lang('Password')">
-              <b-input v-model="password" type="password" name="password" required @input="error = ''" password-reveal data-test="login-password" />
+              <b-input v-model="password" type="password" name="password" @input="error = ''" password-reveal ref="password" data-test="login-password" />
             </b-field>
 
             <div class="login-actions">
               <div class="login-links">
-                <button type="button" class="login-link" @click="showUsernameHelp = !showUsernameHelp">
+                <button type="button" class="login-link" @click="showUsernameHelp = !showUsernameHelp" data-test="login-forgot-username">
                   {{ lang('Forgot your username?') }}
                 </button>
-                <button v-if="$store.state.config.password_reset_enabled" type="button" class="login-link" @click="$router.push('/forgot-password').catch(() => {})">
+                <button v-if="$store.state.config.password_reset_enabled" type="button" class="login-link" @click="$router.push('/forgot-password').catch(() => {})" data-test="login-forgot-password">
                   {{ lang('Forgot password?') }}
                 </button>
               </div>
@@ -186,6 +186,22 @@ export default {
   },
   methods: {
     login() {
+      // Validate in JS instead of via native `required` on the inputs. A
+      // `required` field pops the browser's "please fill out this field"
+      // bubble whenever the form is submitted, and that bubble surprised
+      // users who clicked secondary controls (the forgot-password / forgot-
+      // username links) — see commit 955d4da. With no `required` attributes
+      // the browser never shows that bubble on any click; this guard gives
+      // the same "you must enter both" feedback through the inline error.
+      if (!this.username || !this.password) {
+        this.error = this.lang('Please enter your username and password.')
+        const emptyRef = !this.username ? 'username' : 'password'
+        this.$nextTick(() => {
+          const field = this.$refs[emptyRef]
+          field && field.focus && field.focus()
+        })
+        return
+      }
       api.login({
         username: this.username,
         password: this.password,

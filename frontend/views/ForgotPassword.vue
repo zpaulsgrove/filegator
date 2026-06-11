@@ -9,7 +9,7 @@
           <h3 class="is-size-5" style="margin: 1em 0">
             {{ lang('Reset your password') }}
           </h3>
-          <p>{{ lang('Enter the email address associated with your account. If it matches an address on file, we will send you a password reset link shortly.') }}</p>
+          <p>{{ lang('Enter the email address associated with your portal login. If it matches the address recorded in this portal, we will send you a password reset link shortly.') }}</p>
           <p style="margin-top: 0.75em">{{ lang('If you do not receive the email within a few minutes, check your spam folder or contact us for help.') }}</p>
           <br>
           <b-field :label="lang('Email')">

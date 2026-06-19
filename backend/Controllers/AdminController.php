@@ -18,6 +18,7 @@ use Filegator\Services\Audit\WeeklyDigest;
 use Filegator\Services\Auth\AuthInterface;
 use Filegator\Services\Auth\MfaCapableInterface;
 use Filegator\Services\Auth\MfaLockout;
+use Filegator\Services\Auth\PasswordResettableInterface;
 use Filegator\Services\Auth\RequiresStepUpAuth;
 use Filegator\Services\Auth\User;
 use Filegator\Services\Logger\LoggerInterface;
@@ -104,6 +105,28 @@ class AdminController
             return $response->json(['username' => 'Username already taken'], 422);
         }
 
+        if ($emailError = $this->emailInUse($email, [$request->input('username')])) {
+            return $response->json($emailError, 422);
+        }
+
+        // Validate the SUPPLIED (pre-join) value: a non-admin must name at least
+        // one folder segment, so the joined path always lands strictly beneath
+        // the admin's own scope rather than equalling it (the firm root). This
+        // is correct regardless of where the acting admin is rooted.
+        if ($homedirError = $this->assertSubfoldersForNonAdmin($homedirs, $request->input('role', 'user'))) {
+            return $response->json($homedirError, 422);
+        }
+
+        // Apply the admin-prefix join to EACH supplied homedir. Same shape as
+        // the pre-refactor single-string join, just looped. Admin is assumed
+        // single-folder (Elliff CPA invariant); we use the first homedir of
+        // whoever is acting as admin.
+        $adminBase = rtrim((string) ($this->auth->user()->getHomeDirs()[0] ?? ''), $this->storage->getSeparator());
+        $separator = $this->storage->getSeparator();
+        $homedirs = array_map(function ($h) use ($adminBase, $separator) {
+            return $adminBase . $separator . ltrim((string) $h, $separator);
+        }, $homedirs);
+
         $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
         if (! $check['ok']) return;
         $this->auditBackupCodeIfUsed($check, $audit, $this->logger, $request->getClientIp());
@@ -111,15 +134,7 @@ class AdminController
         try {
             $user->setName($request->input('name'));
             $user->setUsername($request->input('username'));
-            // Apply the admin-prefix join to EACH supplied homedir. Same
-            // shape as the pre-refactor single-string join, just looped.
-            // Admin is assumed single-folder (Elliff CPA invariant); we
-            // use the first homedir of whoever is acting as admin.
-            $adminBase = rtrim((string) ($this->auth->user()->getHomeDirs()[0] ?? ''), $this->storage->getSeparator());
-            $separator = $this->storage->getSeparator();
-            $user->setHomedirs(array_map(function ($h) use ($adminBase, $separator) {
-                return $adminBase . $separator . ltrim((string) $h, $separator);
-            }, $homedirs));
+            $user->setHomedirs($homedirs);
             $user->setRole($request->input('role', 'user'));
             $user->setPermissions($request->input('permissions'));
             $ret = $this->auth->add($user, $request->input('password'));
@@ -175,6 +190,17 @@ class AdminController
         $email = $request->input('email', null);
         if (! $this->emailValid($email)) {
             return $response->json(['email' => 'Invalid email address'], 422);
+        }
+
+        // Compare against the (possibly renamed) target username so keeping the
+        // same email on the same user is allowed, but reusing another user's
+        // email is rejected.
+        if ($emailError = $this->emailInUse($email, [$username, $request->input('username')])) {
+            return $response->json($emailError, 422);
+        }
+
+        if ($homedirError = $this->assertSubfoldersForNonAdmin($homedirs, $request->input('role', 'user'))) {
+            return $response->json($homedirError, 422);
         }
 
         $check = $this->stepUpForAdmin($request, $response, $mfa, $lockout, $config);
@@ -295,6 +321,60 @@ class AdminController
     {
         if ($email === null || $email === '') return true;
         return (bool) filter_var($email, FILTER_VALIDATE_EMAIL);
+    }
+
+    /**
+     * Reject an email that already belongs to a different user. Returns an
+     * error payload (for a 422 response) or null when the email is free.
+     *
+     * Enforcing uniqueness here, before the user is persisted, prevents the
+     * duplicate-email state that breaks password reset (findByEmail resolves
+     * to only the first match) and avoids the half-created-user side effect of
+     * relying on the adapter's setEmail() throwing after auth->add().
+     *
+     * $ownUsernames are the usernames that may legitimately already hold this
+     * email (the target user, plus its pre-rename name on update).
+     */
+    protected function emailInUse($email, array $ownUsernames): ?array
+    {
+        if ($email === null || $email === '') {
+            return null;
+        }
+        if (! $this->auth instanceof PasswordResettableInterface) {
+            return null;
+        }
+
+        $existing = $this->auth->findByEmail($email);
+        if ($existing && ! in_array($existing->getUsername(), $ownUsernames, true)) {
+            return ['email' => 'Email already in use'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Guard that a non-admin user is only ever assigned a real subfolder, never
+     * the firm root. Admins keep full freedom. Returns an error payload (for a
+     * 422 response) or null when all paths are acceptable.
+     *
+     * This is the authoritative check — the folder picker also hides the root
+     * for non-admins, but UI can be bypassed, so the backend enforces it on the
+     * only two homedir write paths (storeUser, updateUser).
+     */
+    protected function assertSubfoldersForNonAdmin(array $homedirs, string $role): ?array
+    {
+        if ($role === 'admin') {
+            return null;
+        }
+
+        $separator = $this->storage->getSeparator();
+        foreach ($homedirs as $h) {
+            if (! Homedirs::isStrictSubfolder((string) $h, $separator)) {
+                return ['homedir' => 'Non-admin users must be assigned a specific subfolder, not the firm root.'];
+            }
+        }
+
+        return null;
     }
 
     protected function currentAdminUsername(): string

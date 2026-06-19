@@ -342,6 +342,129 @@ class AdminTest extends TestCase
         ]);
     }
 
+    public function testNonAdminCannotBeAssignedFirmRootOnCreate()
+    {
+        // Admin's homedir is '/'. Supplying '/' (or empty-ish) for a non-admin
+        // would resolve to the firm root after the join — must be rejected.
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name'        => 'Root Grab',
+            'username'    => 'rootgrab@example.com',
+            'role'        => 'user',
+            'permissions' => [],
+            'password'    => 'pass123',
+            'homedir'     => '/',
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['homedir' => 'Non-admin users must be assigned a specific subfolder, not the firm root.']]);
+    }
+
+    public function testNonAdminCannotBeRelocatedToFirmRootOnUpdate()
+    {
+        // updateUser stores homedirs verbatim, so the guard must catch a bare
+        // '/' assignment to a non-admin here too.
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'John Doe',
+            'username'    => 'john@example.com',
+            'role'        => 'user',
+            'permissions' => ['read'],
+            'homedir'     => '/',
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['homedir' => 'Non-admin users must be assigned a specific subfolder, not the firm root.']]);
+    }
+
+    public function testAdminMayBeAssignedFirmRoot()
+    {
+        // The restriction is non-admin only: admins must still be grantable the
+        // whole firm.
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'John Doe',
+            'username'    => 'john@example.com',
+            'role'        => 'admin',
+            'permissions' => ['read', 'write'],
+            'homedir'     => '/',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['homedir' => '/']]);
+    }
+
+    public function testNonAdminSubfolderIsAccepted()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name'        => 'Client',
+            'username'    => 'client@example.com',
+            'role'        => 'user',
+            'permissions' => [],
+            'password'    => 'pass123',
+            'homedir'     => 'clientA',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas(['data' => ['homedir' => '/clientA']]);
+    }
+
+    public function testDuplicateEmailIsRejectedOnCreate()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name'        => 'First',
+            'username'    => 'first@example.com',
+            'role'        => 'user',
+            'permissions' => [],
+            'password'    => 'pass123',
+            'homedir'     => '/first',
+            'email'       => 'shared@example.test',
+        ]);
+        $this->assertOk();
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name'        => 'Second',
+            'username'    => 'second@example.com',
+            'role'        => 'user',
+            'permissions' => [],
+            'password'    => 'pass123',
+            'homedir'     => '/second',
+            'email'       => 'shared@example.test',
+        ]);
+        $this->assertStatus(422);
+        $this->assertResponseJsonHas(['data' => ['email' => 'Email already in use']]);
+    }
+
+    public function testUserMayKeepOwnEmailOnUpdate()
+    {
+        // Re-saving a user with the email it already owns must not be flagged
+        // as a duplicate.
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'John Doe',
+            'username'    => 'john@example.com',
+            'role'        => 'user',
+            'permissions' => ['read'],
+            'homedir'     => '/john',
+            'email'       => 'john.owns@example.test',
+        ]);
+        $this->assertOk();
+
+        $this->sendRequest('POST', '/updateuser/john@example.com', [
+            'name'        => 'John Doe',
+            'username'    => 'john@example.com',
+            'role'        => 'user',
+            'permissions' => ['read'],
+            'homedir'     => '/john',
+            'email'       => 'john.owns@example.test',
+        ]);
+        $this->assertOk();
+    }
+
     public function testListUsersShapeIncludesHomedirField()
     {
         $this->signIn('admin@example.com', 'admin123');

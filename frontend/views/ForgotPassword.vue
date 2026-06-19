@@ -77,7 +77,11 @@ export default {
         })
         .catch(error => {
           if (error.response && error.response.status === 429) {
-            this.$toast.open({ message: this.lang('Too many requests'), type: 'is-warning' })
+            this.$toast.open({
+              message: this.lang('Too many reset attempts from this network. Please wait a while and try again, or contact us for help.'),
+              type: 'is-warning',
+              duration: 6000,
+            })
           } else {
             this.handleError(error)
           }

@@ -243,12 +243,15 @@ export default {
   computed: {
     showMfaBanner() {
       const user = this.$store.state.user
-      // Only logged-in portal users without MFA. /getuser already carries
-      // mfa_enabled, so no extra request is needed. Admins are force-enrolled,
-      // so in practice this targets clients who haven't set up MFA yet.
+      // Only logged-in portal users without MFA. /getuser carries mfa_enabled
+      // ONLY for MFA-capable auth adapters; it is omitted otherwise. Use a
+      // strict `=== false` so we nudge a capable-but-unenrolled user, but stay
+      // silent when the field is absent (adapter can't do MFA, or its state
+      // couldn't be read) — otherwise we'd advertise a setup flow that doesn't
+      // exist. Admins are force-enrolled, so this targets unenrolled clients.
       return !!user
         && user.role !== 'guest'
-        && !user.mfa_enabled
+        && user.mfa_enabled === false
         && !this.mfaBannerDismissed
     },
     breadcrumbs() {

@@ -76,6 +76,104 @@ class ArchiverTest extends TestCase
         $this->assertGreaterThan(0, filesize(TEST_TMP_PATH.$name));
     }
 
+    /**
+     * Read the entry names out of the just-built (closed) archive in tmpfs.
+     */
+    protected function archiveEntries(string $name): array
+    {
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open(TEST_TMP_PATH.$name) === true, 'archive should open');
+
+        $entries = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entries[] = $zip->getNameIndex($i);
+        }
+        $zip->close();
+
+        return $entries;
+    }
+
+    public function testSingleFileIsStoredAtArchiveRoot()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+
+        $storage->createDir('/', 'clientA');
+        $storage->createDir('/clientA', '2023');
+        $storage->createFile('/clientA/2023', 'return.pdf');
+
+        $name = $this->archiver->createArchive($storage);
+        $this->archiver->addFileFromStorage('/clientA/2023/return.pdf');
+        $this->archiver->closeArchive();
+
+        // No nested folder tree: the file sits at the archive root, not under
+        // clientA/2023/.
+        $this->assertEquals(['return.pdf'], $this->archiveEntries($name));
+    }
+
+    public function testDirectoryIsStoredUnderItsOwnNameNotFullPath()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+
+        $storage->createDir('/', 'clientA');
+        $storage->createDir('/clientA', '2023');
+        $storage->createFile('/clientA', 'note.txt');
+        $storage->createFile('/clientA/2023', 'return.pdf');
+
+        $name = $this->archiver->createArchive($storage);
+        $this->archiver->addDirectoryFromStorage('/clientA');
+        $this->archiver->closeArchive();
+
+        $entries = $this->archiveEntries($name);
+
+        // The selected folder is the top of the archive; its children keep
+        // their structure relative to it.
+        $this->assertContains('clientA/note.txt', $entries);
+        $this->assertContains('clientA/2023/return.pdf', $entries);
+
+        // Nothing carries the absolute storage path or a leading separator.
+        foreach ($entries as $entry) {
+            $this->assertStringStartsNotWith('/', $entry, 'entries must be relative');
+            $this->assertStringStartsNotWith('clientA/clientA', $entry, 'must not double the base');
+        }
+    }
+
+    public function testMultipleFilesFromSameFolderDoNotCollide()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+
+        $storage->createDir('/', 'clientA');
+        $storage->createFile('/clientA', 'a.txt');
+        $storage->createFile('/clientA', 'b.txt');
+
+        $name = $this->archiver->createArchive($storage);
+        // Mirrors a multi-select batch download: both items share one parent.
+        $this->archiver->addFileFromStorage('/clientA/a.txt');
+        $this->archiver->addFileFromStorage('/clientA/b.txt');
+        $this->archiver->closeArchive();
+
+        $entries = $this->archiveEntries($name);
+        sort($entries);
+        $this->assertEquals(['a.txt', 'b.txt'], $entries);
+    }
+
     public function testUploadingArchiveToStorage()
     {
         $storage = new Filesystem();

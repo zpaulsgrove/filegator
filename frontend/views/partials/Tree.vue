@@ -8,7 +8,7 @@
     <section class="modal-card-body">
       <div class="tree">
         <ul class="tree-list">
-          <TreeNode :node="$store.state.tree" @selected="$emit('selected', $event) && $parent.close()" />
+          <TreeNode :node="$store.state.tree" :allow-root="allowRoot" @selected="$emit('selected', $event) && $parent.close()" />
         </ul>
       </div>
     </section>
@@ -26,6 +26,15 @@ import TreeNode from './TreeNode'
 export default {
   name: 'Tree',
   components: { TreeNode },
+  props: {
+    // When false, the root node is shown for navigation but cannot be selected
+    // (used when assigning a non-admin user a folder — they may never be scoped
+    // to the firm root).
+    allowRoot: {
+      type: Boolean,
+      default: true,
+    },
+  },
 }
 </script>
 

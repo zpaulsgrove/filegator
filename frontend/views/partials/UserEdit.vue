@@ -204,12 +204,23 @@ export default {
     selectDir(idx) {
       this.formErrors.homedir = ''
 
+      // Non-admins must never be scoped to the firm root. The picker hides the
+      // root for them; this also guards programmatically in case it slips
+      // through. The backend enforces the same rule authoritatively.
+      const allowRoot = this.formFields.role === 'admin'
+
       this.$modal.open({
         parent: this,
         hasModalCard: true,
         component: Tree,
+        props: { allowRoot },
         events: {
           selected: dir => {
+            if (!allowRoot && (dir.path === '/' || dir.path === '')) {
+              this.formErrors.homedir = this.lang('Non-admin users must be assigned a specific subfolder, not the firm root.')
+              this.$forceUpdate()
+              return
+            }
             // $set is required for index assignment to stay reactive in
             // Vue 2. Plain `this.formFields.homedirs[idx] = path` would
             // mutate the array but skip change detection on that slot.

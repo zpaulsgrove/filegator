@@ -70,7 +70,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'New User',
             'username' => 'new@example.com',
             'password' => 'newpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
         ]);
         $this->assertUnprocessable();
     }
@@ -81,7 +81,7 @@ class AdminStepUpTest extends TestCase
         $this->sendRequest('POST', '/updateuser/john@example.com', [
             'name' => 'Renamed',
             'username' => 'john@example.com',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
         ]);
         $this->assertUnprocessable();
     }
@@ -112,7 +112,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'Brand New',
             'username' => 'brandnew@example.com',
             'password' => 'newuserpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
             'stepup_password' => 'admin123',
@@ -132,7 +132,7 @@ class AdminStepUpTest extends TestCase
         $this->sendRequest('POST', '/updateuser/john@example.com', [
             'name' => 'Renamed John',
             'username' => 'john@example.com',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
             'stepup_password' => 'admin123',
@@ -246,7 +246,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'First',
             'username' => 'first@example.com',
             'password' => 'newpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
             'stepup_password' => 'admin123',
@@ -259,7 +259,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'Second',
             'username' => 'second@example.com',
             'password' => 'newpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
             'stepup_password' => 'admin123',
@@ -382,7 +382,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'Imposter',
             'username' => 'john@example.com',
             'password' => 'newpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
             'stepup_password' => 'admin123',
@@ -452,7 +452,7 @@ class AdminStepUpTest extends TestCase
             'name' => 'No Stepup',
             'username' => 'nostepup@example.com',
             'password' => 'newuserpw',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
         ]);
@@ -470,7 +470,7 @@ class AdminStepUpTest extends TestCase
         $this->sendRequest('POST', '/updateuser/john@example.com', [
             'name' => 'Renamed No Stepup',
             'username' => 'john@example.com',
-            'homedirs' => ['/'],
+            'homedirs' => ['/stepup'],
             'role' => 'user',
             'permissions' => [],
         ]);

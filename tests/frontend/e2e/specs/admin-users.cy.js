@@ -16,13 +16,16 @@ describe('Admin user management', () => {
     cy.login('admin', 'admin123')
 
     // Seed targets while the admin is NOT yet enrolled (no step-up needed).
+    // Non-admins must be scoped to a real subfolder, never the firm root, so
+    // seed them under a specific folder (the backend now rejects '/' for a
+    // non-admin role).
     cy.adminCreateUser({
       username: 'editme', password: 'editme12345', name: 'Edit Me', role: 'user',
-      homedirs: ['/'], permissions: ['read'],
+      homedirs: ['/editme'], permissions: ['read'],
     })
     cy.adminCreateUser({
       username: 'deleteme', password: 'deleteme123', name: 'Delete Me', role: 'user',
-      homedirs: ['/'], permissions: ['read'],
+      homedirs: ['/deleteme'], permissions: ['read'],
     })
     cy.apiPost('/logout')
 
@@ -55,8 +58,9 @@ describe('Admin user management', () => {
     cy.get('[data-test="user-password"]').type('newbie12345')
     cy.get('[data-test="user-perm-read"]').click()
     // The folder input opens the Tree picker on focus, so set it without
-    // focusing (mirrors the controlled-input pattern used elsewhere).
-    cy.get('[data-test="user-folder-0"]').invoke('val', '/').trigger('input')
+    // focusing (mirrors the controlled-input pattern used elsewhere). Use a
+    // real subfolder — non-admins can no longer be assigned the firm root.
+    cy.get('[data-test="user-folder-0"]').invoke('val', '/newbie').trigger('input')
     cy.get('[data-test="user-save"]').click()
 
     stepUp('admin123')

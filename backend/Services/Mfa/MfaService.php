@@ -25,6 +25,33 @@ class MfaService implements Service
     /** TTL for individual mfa_used_*.lock replay markers, in seconds. */
     const REPLAY_MARKER_TTL = 90;
 
+    /**
+     * TOTP step length in seconds (OTPHP's default). Single source of truth for
+     * enrollment, verification, and the drift leeway below, so they can't drift
+     * apart if the period is ever changed.
+     */
+    const TOTP_PERIOD = 30;
+
+    /**
+     * Clock-drift tolerance for TOTP verification, in SECONDS.
+     *
+     * OTPHP's verify() third argument is a LEEWAY IN SECONDS (it checks
+     * at(now - leeway), at(now), at(now + leeway)), NOT a number of periods.
+     * A literal `1` therefore allowed only +/-1 second of drift — far short of
+     * the one-step (~30s) tolerance authenticator apps assume — so a user (or
+     * server) with mild clock skew, or a request crossing a 30s window boundary
+     * on a slow network, had a *valid* TOTP rejected (also the root cause of the
+     * intermittent step-up/MFA test flakiness).
+     *
+     * Deriving `period - 1` yields the standard previous/current/next window and
+     * always satisfies OTPHP's "leeway must be < period" constraint, so it can
+     * never throw (a thrown leeway error would be swallowed by the verify
+     * try/catch and silently fail EVERY code). Replay protection keeps each
+     * accepted code single-use, so widening the *time* window does not widen the
+     * *reuse* window.
+     */
+    const VERIFY_LEEWAY_SECONDS = self::TOTP_PERIOD - 1;
+
     protected $auth;
 
     protected $tmpfs;
@@ -82,7 +109,7 @@ class MfaService implements Service
             throw new \RuntimeException('MFA is already enabled; disable it before re-enrolling');
         }
 
-        $totp = TOTP::create();
+        $totp = TOTP::create(null, self::TOTP_PERIOD);
         $totp->setLabel($username);
         $totp->setIssuer($this->issuer);
 
@@ -200,8 +227,12 @@ class MfaService implements Service
     {
         try {
             $totp = TOTP::createFromSecret($secret);
-            // window = 1 step (~30s) drift tolerance
-            return $totp->verify($code, null, 1);
+            // Pin the period to our constant so the derived leeway and the
+            // verification window stay consistent (createFromSecret already
+            // defaults to 30; this keeps TOTP_PERIOD authoritative).
+            $totp->setPeriod(self::TOTP_PERIOD);
+            // +/-1 step drift tolerance; see VERIFY_LEEWAY_SECONDS.
+            return $totp->verify($code, null, self::VERIFY_LEEWAY_SECONDS);
         } catch (\Throwable $e) {
             // A corrupted/invalid mfa_secret is treated as a verification failure
             // rather than a fatal error, so the user can still try a backup code.

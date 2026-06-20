@@ -15,6 +15,26 @@
     <div v-if="!dropZone" class="container">
       <Menu />
 
+      <b-notification
+        v-if="showMfaBanner"
+        type="is-info"
+        has-icon
+        :closable="true"
+        class="mfa-banner"
+        @close="dismissMfaBanner"
+      >
+        <strong>{{ lang('Protect your account with Multi-Factor Authentication') }}</strong>
+        <p>
+          {{ lang('If you have not already set up Multi-Factor Authentication, we highly suggest doing so now to protect your private information. To set up MFA, install an authenticator app on your phone (for example, Microsoft Authenticator), then select your name at the top right of this screen and follow the instructions.') }}
+        </p>
+        <p style="margin-top: 0.5em">
+          <router-link to="/security" class="has-text-weight-semibold">
+            {{ lang('Set up MFA now') }}
+          </router-link>
+        </p>
+        <!-- TODO: add a "Here is a video of Jacob showing how to set up MFA" link once recorded. -->
+      </b-notification>
+
       <div id="browser">
         <div v-if="can('read')" class="is-flex is-justify-between">
           <div class="breadcrumb" aria-label="breadcrumbs">
@@ -36,13 +56,15 @@
 
         <section id="multi-actions" class="is-flex is-justify-between">
           <div>
-            <b-field v-if="can('upload') && ! checked.length" class="file is-inline-block">
-              <b-upload multiple native @input="files = $event">
-                <a v-if="! checked.length" class="is-inline-block">
-                  <b-icon icon="upload" size="is-small" /> {{ lang('Add files') }}
-                </a>
-              </b-upload>
-            </b-field>
+            <template v-if="can('upload') && ! checked.length">
+              <b-field v-for="opt in uploadOptions" :key="opt.label" class="file is-inline-block">
+                <b-upload multiple native v-bind="opt.attrs" @input="files = $event">
+                  <a class="is-inline-block">
+                    <b-icon :icon="opt.icon" size="is-small" /> {{ lang(opt.label) }}
+                  </a>
+                </b-upload>
+              </b-field>
+            </template>
             <a v-if="can(['read', 'write']) && ! checked.length" class="add-new is-inline-block">
               <b-dropdown :disabled="checked.length > 0" aria-role="list">
                 <span slot="trigger" data-test="new-menu">
@@ -207,9 +229,34 @@ export default {
       // nothing is pending, so the active_homedir watcher below stays inert
       // for ordinary in-session folder switches.
       deferredCd: null,
+      // MFA nudge banner: dismissed-per-user so it stays hidden once closed but
+      // reappears for anyone who still hasn't enrolled. Keyed by username so a
+      // shared browser doesn't carry one user's dismissal to the next.
+      mfaBannerDismissed: this.isMfaBannerDismissed(),
     }
   },
   computed: {
+    // The two upload controls differ only by the directory attributes and the
+    // icon/label, so drive both from one config instead of duplicated markup.
+    uploadOptions() {
+      return [
+        { label: 'Add files', icon: 'upload', attrs: {} },
+        { label: 'Upload folder', icon: 'folder-open', attrs: { webkitdirectory: true, directory: true } },
+      ]
+    },
+    showMfaBanner() {
+      const user = this.$store.state.user
+      // Only logged-in portal users without MFA. /getuser carries mfa_enabled
+      // ONLY for MFA-capable auth adapters; it is omitted otherwise. Use a
+      // strict `=== false` so we nudge a capable-but-unenrolled user, but stay
+      // silent when the field is absent (adapter can't do MFA, or its state
+      // couldn't be read) — otherwise we'd advertise a setup flow that doesn't
+      // exist. Admins are force-enrolled, so this targets unenrolled clients.
+      return !!user
+        && user.role !== 'guest'
+        && user.mfa_enabled === false
+        && !this.mfaBannerDismissed
+    },
     breadcrumbs() {
       let path = ''
       let breadcrumbs = [{name: this.lang('Home'), path: '/'}]
@@ -476,6 +523,14 @@ export default {
     batchDownload() {
       let items = this.getSelected()
 
+      // A single file needs no archive — stream it directly so the client gets
+      // the file itself (e.g. a PDF opening inline) instead of a zip wrapping a
+      // nested folder tree. Folders / multi-selections still go through the zip.
+      if (this.can('download') && items.length === 1 && items[0].type === 'file') {
+        this.download(items[0])
+        return
+      }
+
       this.isLoading = true
       api.batchDownload({
         items: items,
@@ -497,6 +552,26 @@ export default {
     },
     download(item) {
       window.open(this.getDownloadLink(item.path), '_blank')
+    },
+    mfaBannerKey() {
+      const user = this.$store.state.user
+      return 'mfa_banner_dismissed_' + ((user && user.username) || '')
+    },
+    isMfaBannerDismissed() {
+      try {
+        return window.localStorage.getItem(this.mfaBannerKey()) === '1'
+      } catch (e) {
+        // Private-mode / disabled storage: just show the banner.
+        return false
+      }
+    },
+    dismissMfaBanner() {
+      this.mfaBannerDismissed = true
+      try {
+        window.localStorage.setItem(this.mfaBannerKey(), '1')
+      } catch (e) {
+        // Non-persistent dismissal is fine if storage is unavailable.
+      }
     },
     search() {
       this.$modal.open({

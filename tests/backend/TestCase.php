@@ -200,24 +200,18 @@ class TestCase extends BaseTestCase
     }
 
     /**
-     * Mint a TOTP code that is safe to verify across the follow-up request(s)
-     * of a test.
+     * Mint a TOTP code for the current 30s step.
      *
-     * The verify path (MfaService) calls OTPHP `verify($code, null, 1)` where
-     * the third argument is a leeway in SECONDS (not periods). So a code minted
-     * in the final second of a 30s step can lapse before a slow request boots
-     * and verifies it — the root cause of intermittent step-up/MFA failures
-     * under a loaded suite. If too little time remains in the current step,
-     * wait for the next one before minting so the code stays comfortably valid.
+     * This is deterministic and free of any wall-clock waiting. The verify
+     * path (MfaService::verifyTotpAgainstSecret) tolerates +/-1 step of
+     * drift (VERIFY_LEEWAY_SECONDS), so a code minted here remains valid
+     * even if a follow-up request in the same test boots in the adjacent
+     * window — which previously caused intermittent step-up/MFA failures
+     * under a loaded suite and was masked here by a usleep() boundary wait.
+     * With the server-side leeway corrected, no such wait is needed.
      */
     public function totpNow(string $secret): string
     {
-        $period = 30;
-        $secondsLeft = $period - (time() % $period);
-        if ($secondsLeft < 5) {
-            usleep(($secondsLeft + 1) * 1000000);
-        }
-
         return \OTPHP\TOTP::createFromSecret($secret)->now();
     }
 }

@@ -196,12 +196,34 @@ class MfaService implements Service
         return $this->capable()->consumeBackupCode($username, $normalized);
     }
 
+    /**
+     * One TOTP step of clock-drift tolerance, expressed in seconds.
+     *
+     * OTPHP's verify() third argument is a LEEWAY IN SECONDS (it checks
+     * at(now - leeway), at(now), at(now + leeway)), NOT a number of periods.
+     * Passing a literal `1` therefore allowed only +/-1 second of drift —
+     * far short of the one-step (~30s) tolerance the previous comment
+     * claimed and that authenticator apps assume. The practical effects:
+     *  - production: a user (or server) whose clock is off by more than a
+     *    second, or whose request crosses a 30s window boundary on a slow
+     *    network, has a *valid* TOTP rejected;
+     *  - tests: a code minted a few seconds before the verifying request
+     *    boots can land in the previous window and be rejected, which is
+     *    the root cause of the intermittent step-up/MFA test failures.
+     *
+     * Using `period - 1` yields the standard +/-1 step window (previous,
+     * current, next) without exceeding OTPHP's "leeway must be < period"
+     * constraint. Replay protection still makes every accepted code single
+     * use, so widening the *time* window does not widen the *reuse* window.
+     */
+    const VERIFY_LEEWAY_SECONDS = 29;
+
     protected function verifyTotpAgainstSecret(string $secret, string $code): bool
     {
         try {
             $totp = TOTP::createFromSecret($secret);
-            // window = 1 step (~30s) drift tolerance
-            return $totp->verify($code, null, 1);
+            // +/-1 step (~30s) drift tolerance; see VERIFY_LEEWAY_SECONDS.
+            return $totp->verify($code, null, self::VERIFY_LEEWAY_SECONDS);
         } catch (\Throwable $e) {
             // A corrupted/invalid mfa_secret is treated as a verification failure
             // rather than a fatal error, so the user can still try a backup code.

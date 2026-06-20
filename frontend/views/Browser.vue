@@ -56,20 +56,15 @@
 
         <section id="multi-actions" class="is-flex is-justify-between">
           <div>
-            <b-field v-if="can('upload') && ! checked.length" class="file is-inline-block">
-              <b-upload multiple native @input="files = $event">
-                <a v-if="! checked.length" class="is-inline-block">
-                  <b-icon icon="upload" size="is-small" /> {{ lang('Add files') }}
-                </a>
-              </b-upload>
-            </b-field>
-            <b-field v-if="can('upload') && ! checked.length" class="file is-inline-block">
-              <b-upload multiple native webkitdirectory directory @input="files = $event">
-                <a v-if="! checked.length" class="is-inline-block">
-                  <b-icon icon="folder-open" size="is-small" /> {{ lang('Upload folder') }}
-                </a>
-              </b-upload>
-            </b-field>
+            <template v-if="can('upload') && ! checked.length">
+              <b-field v-for="opt in uploadOptions" :key="opt.label" class="file is-inline-block">
+                <b-upload multiple native v-bind="opt.attrs" @input="files = $event">
+                  <a class="is-inline-block">
+                    <b-icon :icon="opt.icon" size="is-small" /> {{ lang(opt.label) }}
+                  </a>
+                </b-upload>
+              </b-field>
+            </template>
             <a v-if="can(['read', 'write']) && ! checked.length" class="add-new is-inline-block">
               <b-dropdown :disabled="checked.length > 0" aria-role="list">
                 <span slot="trigger" data-test="new-menu">
@@ -241,6 +236,14 @@ export default {
     }
   },
   computed: {
+    // The two upload controls differ only by the directory attributes and the
+    // icon/label, so drive both from one config instead of duplicated markup.
+    uploadOptions() {
+      return [
+        { label: 'Add files', icon: 'upload', attrs: {} },
+        { label: 'Upload folder', icon: 'folder-open', attrs: { webkitdirectory: true, directory: true } },
+      ]
+    },
     showMfaBanner() {
       const user = this.$store.state.user
       // Only logged-in portal users without MFA. /getuser carries mfa_enabled

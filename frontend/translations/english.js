@@ -104,6 +104,19 @@ const data = {
   'This permanently removes the user and all their session state.': 'This permanently removes the user and all their session state.',
   'This resets MFA for the user. They will need to re-enroll on their next login.': 'This resets MFA for the user. They will need to re-enroll on their next login.',
   'MFA reset': 'MFA reset',
+  'Folder Access': 'Folder Access',
+  'Browse folder': 'Browse folder',
+  'Filter folders': 'Filter folders',
+  'Access': 'Access',
+  'Direct': 'Direct',
+  'Inherited from {0}': 'Inherited from {0}',
+  'Inspected': 'Inspected',
+  'No users with access': 'No users with access',
+  'No folders': 'No folders',
+  'Loading': 'Loading',
+  'Showing access for {0}': 'Showing access for {0}',
+  'no read': 'no read',
+  'User is scoped here but cannot list it without read permission': 'User is scoped here but cannot list it without read permission',
 }
 
 export default data

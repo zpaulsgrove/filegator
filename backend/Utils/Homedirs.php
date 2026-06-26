@@ -69,4 +69,76 @@ class Homedirs
         }
         return $default;
     }
+
+    /**
+     * Canonical key for a folder path: trim whitespace, split on the
+     * separator, drop empty segments (which collapses leading, trailing and
+     * repeated separators), and re-join. So '/clientA', '/clientA/' and
+     * 'clientA' all map to the same 'clientA', and the storage root ('/' or
+     * '') collapses to ''. `..` segments are left literal — these comparisons
+     * never touch the filesystem, so an unresolved `..` simply fails to match a
+     * real folder rather than escaping one.
+     *
+     * Used both to de-duplicate the audited folder list and inside covers().
+     */
+    public static function normalizePath(string $path, string $separator = '/'): string
+    {
+        $segments = array_filter(
+            explode($separator, trim($path)),
+            function ($s) {
+                return $s !== '';
+            }
+        );
+
+        return implode($separator, $segments);
+    }
+
+    /**
+     * True when $homedir grants access to $path under the home-directory
+     * sandbox model: a user rooted at $homedir can reach that folder and
+     * everything beneath it. The storage root (normalised '') covers
+     * everything. Segment boundaries are respected so '/client' does NOT
+     * cover '/client2'.
+     */
+    public static function covers(string $homedir, string $path, string $separator = '/'): bool
+    {
+        $h = self::normalizePath($homedir, $separator);
+        $p = self::normalizePath($path, $separator);
+
+        if ($h === '') {
+            return true;
+        }
+        if ($h === $p) {
+            return true;
+        }
+
+        return strpos($p, $h . $separator) === 0;
+    }
+
+    /**
+     * Return the most specific (deepest) homedir from $homedirs that covers
+     * $path, or null when none do. The original (un-normalised) string is
+     * returned so callers can display it verbatim. When a user lists both an
+     * ancestor and the folder itself, the exact/deepest match wins — so a
+     * direct grant is reported as such rather than as inherited from a parent.
+     */
+    public static function grantingHomedir(array $homedirs, string $path, string $separator = '/'): ?string
+    {
+        $best = null;
+        $bestLen = -1;
+        foreach ($homedirs as $h) {
+            if (! is_string($h)) {
+                continue;
+            }
+            if (self::covers($h, $path, $separator)) {
+                $len = strlen(self::normalizePath($h, $separator));
+                if ($len > $bestLen) {
+                    $bestLen = $len;
+                    $best = $h;
+                }
+            }
+        }
+
+        return $best;
+    }
 }

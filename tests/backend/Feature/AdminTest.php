@@ -778,7 +778,12 @@ class AdminTest extends TestCase
         foreach (['/', '/john', '/jane', '/multiA', '/multiB'] as $p) {
             $this->assertArrayHasKey($p, $byPath, "missing folder row {$p}");
         }
-        // user_count matches the number of access entries.
+        // Concrete access sets (guest excluded): only the root admin reaches
+        // '/', while '/john' is the root admin (inherited) plus john (direct).
+        $this->assertSame(['admin@example.com'], array_column($byPath['/']['access'], 'username'));
+        $this->assertSame(1, $byPath['/']['user_count']);
+        $this->assertSame(2, $byPath['/john']['user_count']);
+        // user_count stays in sync with the access list it summarises.
         foreach ($data['folders'] as $folder) {
             $this->assertSame(count($folder['access']), $folder['user_count']);
         }
@@ -806,6 +811,24 @@ class AdminTest extends TestCase
 
         // A sibling-folder user must NOT appear.
         $this->assertArrayNotHasKey('jane@example.com', $john);
+
+        // The anonymous guest pseudo-account is excluded from the audit.
+        $this->assertArrayNotHasKey('guest', $john);
+    }
+
+    public function testFolderAccessAuditExcludesGuestAccount()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertOk();
+
+        // The guest's homedir is '/', so without the exclusion it would appear
+        // (inherited) on every folder. It must appear on none.
+        foreach ($this->decodeResponseJson()['data']['folders'] as $folder) {
+            $usernames = array_column($folder['access'], 'username');
+            $this->assertNotContains('guest', $usernames, "guest leaked into {$folder['path']}");
+        }
     }
 
     public function testFolderAccessAuditListsMultipleOwnersOfOneFolder()
@@ -867,9 +890,56 @@ class AdminTest extends TestCase
         }));
         $this->assertCount(1, $rows);
 
-        $owners = array_column($rows[0]['access'], 'username');
-        $this->assertContains('clean@example.com', $owners);
-        $this->assertContains('slashy@example.com', $owners);
+        $byUser = array_column($rows[0]['access'], null, 'username');
+        $this->assertArrayHasKey('clean@example.com', $byUser);
+        $this->assertArrayHasKey('slashy@example.com', $byUser);
+        // Both own the folder directly. slashy's homedir carries a trailing
+        // slash ('/clientA/'), so 'inherited' must be computed on the NORMALISED
+        // path — a raw string compare ('/clientA/' !== 'clientA') would wrongly
+        // flag slashy as inherited.
+        $this->assertFalse($byUser['clean@example.com']['inherited']);
+        $this->assertFalse($byUser['slashy@example.com']['inherited']);
+        $this->assertSame('/clientA/', $byUser['slashy@example.com']['granted_by']);
+    }
+
+    public function testFolderAccessAuditPathModeResolvesAgainstActiveHomedir()
+    {
+        // Path mode must resolve a browsed path against the admin's ACTIVE
+        // homedir, not blindly homedirs[0]. Set up a multi-folder admin, select
+        // the SECOND folder, then inspect a subpath under it.
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'Multi Admin', 'username' => 'madmin@example.com',
+            'role' => 'admin', 'permissions' => ['read'],
+            'password' => 'pass123', 'homedirs' => ['/teamA', '/teamB'],
+        ]);
+        $this->assertOk();
+
+        // A user living under /teamB so the resolved folder has a direct owner.
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'Bob', 'username' => 'bob@example.com',
+            'role' => 'user', 'permissions' => ['read'],
+            'password' => 'pass123', 'homedir' => '/teamB/project',
+        ]);
+        $this->assertOk();
+
+        $this->signIn('madmin@example.com', 'pass123');
+        // Select the SECOND homedir as active (active != homedirs[0]).
+        $this->sendRequest('POST', '/selectfolder', ['homedir' => '/teamB']);
+        $this->assertOk();
+
+        // The browse tree shows '/project' relative to the active homedir (/teamB).
+        $this->sendRequest('GET', '/admin/folder-access-audit&path='.rawurlencode('/project'));
+        $this->assertOk();
+
+        $folder = $this->decodeResponseJson()['data']['folders'][0];
+        // Resolved against /teamB (active), NOT /teamA (homedirs[0]).
+        $this->assertSame('/teamB/project', $folder['path']);
+
+        $byUser = array_column($folder['access'], null, 'username');
+        $this->assertArrayHasKey('bob@example.com', $byUser);
+        $this->assertFalse($byUser['bob@example.com']['inherited']);
     }
 
     public function testFolderAccessAuditPathModeInspectsArbitraryFolder()

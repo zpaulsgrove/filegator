@@ -23,6 +23,7 @@ use Filegator\Services\Auth\RequiresStepUpAuth;
 use Filegator\Services\Auth\User;
 use Filegator\Services\Logger\LoggerInterface;
 use Filegator\Services\Mfa\MfaService;
+use Filegator\Services\Session\SessionStorageInterface;
 use Filegator\Services\Storage\Filesystem;
 use Filegator\Utils\Homedirs;
 use Rakit\Validation\Validator;
@@ -90,14 +91,23 @@ class AdminController
      *                  path is relative to the acting admin's home directory, so
      *                  it is resolved to root-relative space first.
      */
-    public function folderAccessAudit(Request $request, Response $response)
+    public function folderAccessAudit(Request $request, Response $response, SessionStorageInterface $session)
     {
         $separator = $this->storage->getSeparator();
 
-        // Snapshot the user list once. homedirs drive the whole computation;
-        // the rest is carried through for display.
+        // Snapshot the real user accounts once. homedirs drive the whole
+        // computation; the rest is carried through for display. The built-in
+        // 'guest' pseudo-account is skipped on purpose: its homedir is
+        // typically the storage root, so including it would list the anonymous
+        // identity (with no read permission) as an inherited accessor of every
+        // folder and inflate every count — noise that misrepresents the audit.
+        // "Which user accounts can reach this folder" is a distinct question
+        // from anonymous/guest exposure.
         $users = [];
         foreach ($this->auth->allUsers()->all() as $user) {
+            if ($user->isGuest()) {
+                continue;
+            }
             $row = $user->jsonSerialize();
             $users[] = [
                 'username' => $row['username'],
@@ -108,7 +118,7 @@ class AdminController
             ];
         }
 
-        $folderKeys = $this->auditFolderKeys($request, $separator, $users);
+        $folderKeys = $this->auditFolderKeys($request, $separator, $users, $session);
 
         $folders = [];
         foreach ($folderKeys as $key) {
@@ -147,16 +157,25 @@ class AdminController
     /**
      * Resolve the set of normalised folder keys to audit for the request.
      */
-    protected function auditFolderKeys(Request $request, string $separator, array $users): array
+    protected function auditFolderKeys(Request $request, string $separator, array $users, SessionStorageInterface $session): array
     {
         $pathInput = $request->input('path', null);
 
         if (is_string($pathInput) && trim($pathInput) !== '') {
-            // Browse-tree inspect. Reuse the exact prefix-join storeUser applies
-            // (admin homedir + supplied path): identity for a root admin,
-            // correct scoping for a non-root one.
-            $adminBase = rtrim((string) ($this->auth->user()->getHomeDirs()[0] ?? ''), $separator);
-            $resolved = $adminBase.$separator.ltrim($pathInput, $separator);
+            // Browse-tree inspect. The tree the admin browsed is scoped to their
+            // ACTIVE homedir (the folder selected via the picker, or the only
+            // one for a single-folder admin) exactly as ResolvesActiveHomedir
+            // prefixes the file browser, so the supplied path is relative to
+            // that — NOT necessarily homedirs[0]. Resolving against the active
+            // homedir lands the path in root-relative space for a multi-folder
+            // admin too. Falls back to the first homedir if the session entry
+            // is somehow unset.
+            $active = $session->get(FileController::SESSION_ACTIVE_HOMEDIR, null);
+            if (! is_string($active) || $active === '') {
+                $active = $this->auth->user()->getHomeDirs()[0] ?? '';
+            }
+            $base = rtrim((string) $active, $separator);
+            $resolved = $base.$separator.ltrim($pathInput, $separator);
 
             return [Homedirs::normalizePath($resolved, $separator)];
         }

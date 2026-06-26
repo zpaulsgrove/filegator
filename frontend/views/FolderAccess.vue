@@ -159,7 +159,10 @@ export default {
       this.isLoading = true
       api.folderAccessAudit()
         .then(ret => {
-          this.folders = ret.folders
+          // Default `inspected` so it is a reactive, pre-existing key — an
+          // in-place Object.assign in inspect() can then toggle it on an
+          // already-listed row (Vue 2 won't react to a brand-new key).
+          this.folders = (ret.folders || []).map(f => ({ ...f, inspected: false }))
         })
         .catch(error => this.handleError(error))
         .finally(() => {
@@ -190,7 +193,9 @@ export default {
           if (! folder) return
           const existing = _.find(this.folders, f => f.path === folder.path)
           if (existing) {
-            Object.assign(existing, folder)
+            // `inspected` already exists on the row (defaulted in load), so
+            // assigning it here updates reactively and the highlight/tag show.
+            Object.assign(existing, folder, { inspected: true })
           } else {
             folder.inspected = true
             this.folders.unshift(folder)

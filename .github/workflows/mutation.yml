@@ -2,8 +2,9 @@ name: Mutation
 
 # Mutation testing (Infection) over the security-critical backend services.
 # Much slower than the unit suite and the code changes rarely, so it runs on a
-# weekly schedule plus on-demand rather than on every push/PR. Non-blocking for
-# now (continue-on-error) — establishing the baseline before it becomes a gate.
+# weekly schedule plus on-demand rather than on every push/PR. minMsi/minCoveredMsi
+# are 0 in infection.json5, so the job only fails if Infection genuinely cannot run
+# (not on a low score) — surfacing real breakage instead of masking it.
 on:
   schedule:
     - cron: '0 6 * * 1' # Mondays 06:00 UTC
@@ -23,7 +24,9 @@ jobs:
       with:
         php-version: '8.3'
         extensions: mbstring, zip, sqlite3, filter
-        coverage: xdebug
+        # pcov is markedly faster than xdebug for line coverage, which matters
+        # for the slow initial test run Infection does before mutating.
+        coverage: pcov
 
     - name: Install dependencies
       run: composer install --no-interaction
@@ -32,13 +35,12 @@ jobs:
       run: cp configuration_sample.php configuration.php
 
     - name: Run Infection
-      continue-on-error: true
       # Single-threaded on purpose: the lockout / rate-limit / replay tests share
       # on-disk counter state (app tmpfs + tests/backend/tmp), so parallel workers
       # collide and produce unreliable killed/escaped verdicts. See mutation review.
       # --only-covering-test-cases keeps the run tractable (the feature suite is slow)
       # by running just the tests that cover each mutant rather than whole test files.
-      run: XDEBUG_MODE=coverage vendor/bin/infection --threads=1 --only-covering-test-cases --logger-github --no-progress
+      run: vendor/bin/infection --threads=1 --only-covering-test-cases --logger-github --no-progress
 
     - name: Upload mutation report
       if: always()

@@ -24,9 +24,14 @@
         "text": "tests/backend/infection.log"
     },
     "testFramework": "phpunit",
-    // Baseline MSI recorded from the first full run. Kept slightly below the measured
-    // values to document the floor; the CI job is non-blocking (continue-on-error) for
-    // now and can be flipped into a hard gate once the baseline is trusted.
+    // The covering tests for this code are slow (argon2 password hashing, sodium
+    // crypto, the lockout sleep) so the default per-mutant timeout skips most
+    // mutants. 30s lets far more of them actually run; the weekly cadence absorbs
+    // the longer wall-clock.
+    "timeout": 30,
+    // First functional baseline (PHPUnit 9, pcov): MSI 56%, Covered MSI 70%,
+    // mutation coverage 80%. Kept at 0 (non-blocking) until the baseline settles;
+    // ratchet toward the measured Covered MSI once a couple of clean runs land.
     "minMsi": 0,
     "minCoveredMsi": 0
 }

@@ -54,30 +54,71 @@ class ZipArchiver implements Service, ArchiverInterface
 
     public function addDirectoryFromStorage(string $path)
     {
+        // Entries are stored relative to the selected directory's parent, so a
+        // zip of "/clientA" contains "clientA/..." rather than the full storage
+        // path. $base is the same for every child, keeping the tree intact
+        // under one top-level folder.
+        $base = $this->parentOf($path);
+
         $content = $this->storage->getDirectoryCollection($path, true);
-        $this->archive->createDir($path);
+        $this->archive->createDir($this->relativeEntry($path, $base));
 
         foreach ($content->all() as $item) {
             if ($item['type'] == 'dir') {
-                $this->archive->createDir($item['path']);
+                $this->archive->createDir($this->relativeEntry($item['path'], $base));
             }
             if ($item['type'] == 'file') {
-                $this->addFileFromStorage($item['path']);
+                $this->addFileFromStorage($item['path'], $base);
             }
         }
     }
 
-    public function addFileFromStorage(string $path)
+    /**
+     * $base is the path prefix to strip so the entry sits at (or near) the zip
+     * root instead of recreating the full folder tree. When omitted it defaults
+     * to the file's own parent, so a lone file lands at the zip root.
+     *
+     * Callers that batch multiple selected items rely on the UI invariant that
+     * a selection only spans the current directory: every selected item shares
+     * one parent, so stripping that parent cannot collide two different files
+     * onto the same entry name. A future caller selecting across directories
+     * must pass an explicit common-ancestor $base.
+     */
+    public function addFileFromStorage(string $path, ?string $base = null)
     {
+        if ($base === null) {
+            $base = $this->parentOf($path);
+        }
+
         $file_uniqid = uniqid();
 
         $file = $this->storage->readStream($path);
 
         $this->tmpfs->write($file_uniqid, $file['stream']);
 
-        $this->archive->write($path, $this->tmpfs->getFileLocation($file_uniqid));
+        $this->archive->write($this->relativeEntry($path, $base), $this->tmpfs->getFileLocation($file_uniqid));
 
         $this->tmp_files[] = $file_uniqid;
+    }
+
+    protected function parentOf(string $path): string
+    {
+        $parent = dirname($path);
+
+        // dirname('/file') === '/', dirname('file') === '.' — normalise both to
+        // the storage root so relativeEntry() strips a clean prefix.
+        return ($parent === '.' || $parent === DIRECTORY_SEPARATOR) ? '/' : $parent;
+    }
+
+    protected function relativeEntry(string $path, string $base): string
+    {
+        $base = rtrim($base, '/');
+
+        if ($base !== '' && strpos($path, $base.'/') === 0) {
+            $path = substr($path, strlen($base) + 1);
+        }
+
+        return ltrim($path, '/');
     }
 
     public function uncompress(string $source, string $destination, Storage $storage)

@@ -42,6 +42,18 @@ class Homedirs
     }
 
     /**
+     * True when $path points at a real subfolder, i.e. at least one level
+     * below the storage root. Used to stop a non-admin user being granted the
+     * firm root: after trimming the separator from both ends, root ('/') and
+     * empty strings collapse to '' and are rejected; '/clientA' and
+     * '/clientA/2023' keep a non-empty remainder and pass.
+     */
+    public static function isStrictSubfolder(string $path, string $separator = '/'): bool
+    {
+        return trim(trim($path), $separator) !== '';
+    }
+
+    /**
      * Read homedirs from an array-shaped row (users.json row,
      * jsonSerialize snapshot). Prefers the new `homedirs` array key;
      * falls back to wrapping the legacy `homedir` scalar; returns

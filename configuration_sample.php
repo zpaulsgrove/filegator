@@ -13,9 +13,14 @@ return [
     'step_up_auth' => true,                      // require admin password+TOTP re-verify on user CRUD / reset-MFA
     'mfa_pending_bind_ua' => true,               // reject /login/mfa if User-Agent differs from /login
     'mfa_pending_bind_ip_prefix' => null,        // 'exact', '/24', '/48', or null to disable IP binding
-    'password_reset_token_ttl' => 3600,          // seconds the reset link stays valid
-    'password_reset_max_per_hour_per_ip' => 3,   // throttle per IP
-    'password_reset_max_per_day_per_email' => 3, // throttle per email
+    'password_reset_token_ttl' => 3600,           // seconds the reset link stays valid
+    // Coarse per-network throttle. An office (and tools like Windows Sandbox)
+    // shares one public IP, so a low value blocks every user behind that NAT
+    // after just a few attempts — keep this generous.
+    'password_reset_max_per_hour_per_ip' => 30,
+    // The real abuse bound: caps reset emails sent to any single address, so a
+    // generous per-IP ceiling can't be used to mail-bomb a known mailbox.
+    'password_reset_max_per_day_per_email' => 5,
 
     'frontend_config' => [
         'app_name' => 'FileGator',

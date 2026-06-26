@@ -254,6 +254,80 @@ describe('Login.vue — credentials required, but validated in JS (no native req
 
 })
 
+describe('Login.vue — MFA code validated in JS (no native required)', () => {
+
+  // The MFA inputs intentionally carry no HTML5 `required` attribute. Buefy
+  // runs its validity check on blur, so a `required` field popped the browser's
+  // "please fill out this field" message the instant the user clicked the
+  // "Use a backup code" toggle — and the inserted message shifted the layout
+  // enough to swallow that first click. verifyMfa()/completeSetup() enforce a
+  // non-empty code in JS instead.
+
+  it('the MFA verify input is not natively required', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.step = 'mfa'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="login-mfa-code"]').attributes('required')).toBeUndefined()
+  })
+
+  it('the MFA setup input is not natively required', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.enrollment = { secret: 'S', otpauth_uri: 'otpauth://x' }
+    wrapper.vm.step = 'mfa_setup'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="login-mfa-setup-code"]').attributes('required')).toBeUndefined()
+  })
+
+  it('empty verifyMfa() blocks the API call and shows the authenticator-specific error', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.useBackup = false
+    wrapper.vm.mfaCode = ''
+
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    expect(api.loginMfa).not.toHaveBeenCalled()
+    expect(wrapper.vm.error).toBe('Please enter the code from your authenticator app.')
+  })
+
+  it('empty verifyMfa() in backup mode shows the backup-specific error', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.useBackup = true
+    wrapper.vm.mfaCode = ''
+
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    expect(api.loginMfa).not.toHaveBeenCalled()
+    expect(wrapper.vm.error).toBe('Please enter a backup code.')
+  })
+
+  it('empty completeSetup() blocks the API call and shows an inline error', async () => {
+    const wrapper = mountLogin()
+    wrapper.vm.mfaCode = ''
+
+    wrapper.vm.completeSetup()
+    await flushPromises()
+
+    expect(api.loginMfaSetup).not.toHaveBeenCalled()
+    expect(wrapper.vm.error).toBe('Please enter the code from your authenticator app.')
+  })
+
+  it('toggleBackup() switches mode and clears a stale code and error', () => {
+    const wrapper = mountLogin()
+    wrapper.vm.useBackup = false
+    wrapper.vm.mfaCode = '123456'
+    wrapper.vm.error = 'Invalid code'
+
+    wrapper.vm.toggleBackup()
+
+    expect(wrapper.vm.useBackup).toBe(true)
+    expect(wrapper.vm.mfaCode).toBe('')
+    expect(wrapper.vm.error).toBe('')
+  })
+
+})
+
 describe('Login.vue — forgot links never submit the login form', () => {
 
   it('"Forgot your username?" is a non-submitting button that toggles help without calling the API', async () => {

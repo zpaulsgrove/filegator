@@ -9,11 +9,11 @@
           <h3 class="is-size-5" style="margin: 1em 0">
             {{ lang('Reset your password') }}
           </h3>
-          <p>{{ lang('Enter the email address associated with your account. If it matches an address on file, we will send you a password reset link shortly.') }}</p>
+          <p>{{ lang('Enter the email address associated with your portal login. If it matches the address recorded in this portal, we will send you a password reset link shortly.') }}</p>
           <p style="margin-top: 0.75em">{{ lang('If you do not receive the email within a few minutes, check your spam folder or contact us for help.') }}</p>
           <br>
-          <b-field :label="lang('Email')">
-            <b-input v-model="email" type="email" name="email" autocomplete="email" required ref="email" data-test="forgot-email" />
+          <b-field :label="lang('Email')" :type="error ? 'is-danger' : ''" :message="error">
+            <b-input v-model="email" type="email" name="email" autocomplete="email" @input="error = ''" ref="email" data-test="forgot-email" />
           </b-field>
           <div class="login-actions">
             <button type="button" @click="$router.push('/login').catch(() => {})" class="login-link">{{ lang('Back to login') }}</button>
@@ -57,6 +57,7 @@ export default {
     return {
       email: '',
       sent: false,
+      error: '',
     }
   },
   computed: {
@@ -71,13 +72,29 @@ export default {
   },
   methods: {
     submit() {
+      // Validate in JS rather than with a native `required` on the input, for
+      // the same reason as the login form (commit 5daa0ae): a `required` field
+      // makes Buefy pop the browser's "please fill out this field" message the
+      // moment the field is blurred — e.g. when the user clicks the adjacent
+      // "Back to login" button — and the inserted message shifts the row enough
+      // to swallow that click. The inline error covers the empty case instead.
+      this.error = ''
+      if (!this.email) {
+        this.error = this.lang('Please enter your email address.')
+        this.$nextTick(() => this.$refs.email && this.$refs.email.focus())
+        return
+      }
       api.requestPasswordReset({ email: this.email })
         .then(() => {
           this.sent = true
         })
         .catch(error => {
           if (error.response && error.response.status === 429) {
-            this.$toast.open({ message: this.lang('Too many requests'), type: 'is-warning' })
+            this.$toast.open({
+              message: this.lang('Too many reset attempts from this network. Please wait a while and try again, or contact us for help.'),
+              type: 'is-warning',
+              duration: 6000,
+            })
           } else {
             this.handleError(error)
           }

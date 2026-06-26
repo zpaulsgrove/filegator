@@ -20,7 +20,7 @@ interface ArchiverInterface
 
     public function addDirectoryFromStorage(string $path);
 
-    public function addFileFromStorage(string $path);
+    public function addFileFromStorage(string $path, ?string $base = null);
 
     public function closeArchive();
 

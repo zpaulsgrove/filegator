@@ -15,10 +15,16 @@ describe('Batch download', () => {
   })
 
   it('prepares a batch-download archive for the selected files', () => {
-    cy.createFile('dl.txt')
-    cy.contains('.file-row a.name', 'dl.txt').should('exist')
+    // Two files keep this on the archive path: a single selected file now
+    // streams directly (no dialog), so we select multiple to exercise the
+    // POST /batchdownload "Your file is ready" wiring.
+    cy.createFile('dl1.txt')
+    cy.createFile('dl2.txt')
+    cy.contains('.file-row a.name', 'dl1.txt').should('exist')
+    cy.contains('.file-row a.name', 'dl2.txt').should('exist')
 
-    cy.selectRow('dl.txt')
+    cy.selectRow('dl1.txt')
+    cy.selectRow('dl2.txt')
     cy.get('[data-test="batch-download"]').click()
 
     cy.contains('Your file is ready').should('be.visible')

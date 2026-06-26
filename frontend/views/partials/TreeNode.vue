@@ -5,10 +5,11 @@
     </b-button>
     &nbsp;
     <!-- eslint-disable-next-line -->
-    <a data-test="tree-node" @click="$emit('selected', node)">{{ node.name }}</a>
+    <a v-if="selectable" data-test="tree-node" @click="$emit('selected', node)">{{ node.name }}</a>
+    <span v-else class="tree-node-disabled" :title="lang('Cannot assign the firm root to a non-admin user')">{{ node.name }}</span>
 
     <ul v-if="node.children && node.children.length">
-      <TreeNode v-for="(child, index) in node.children" :key="index" :node="child" @selected="$emit('selected', $event)" />
+      <TreeNode v-for="(child, index) in node.children" :key="index" :node="child" :allow-root="allowRoot" @selected="$emit('selected', $event)" />
     </ul>
   </li>
 </template>
@@ -23,6 +24,12 @@ export default {
     node: {
       type: Object,
       required: true
+    },
+    // Propagated down the tree; when false the root node ('/') is rendered but
+    // not clickable, so a non-admin user can't be scoped to the firm root.
+    allowRoot: {
+      type: Boolean,
+      default: true,
     }
   },
   data() {
@@ -32,6 +39,9 @@ export default {
     }
   },
   computed: {
+    selectable() {
+      return this.allowRoot || this.node.path !== '/'
+    },
     icon() {
       return {
         'fas': true,
@@ -80,5 +90,10 @@ export default {
 a {
   color: #373737;
   font-weight: bold;
+}
+.tree-node-disabled {
+  color: #b5b5b5;
+  font-weight: bold;
+  cursor: not-allowed;
 }
 </style>

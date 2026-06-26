@@ -158,13 +158,15 @@ class PasswordResetService implements Service
 
     public function rateLimitIp(string $ip): bool
     {
-        $max = (int) $this->config->get('password_reset_max_per_hour_per_ip', 3);
+        // Generous default: a whole office shares one public IP, so a low cap
+        // throttles every user behind that NAT. Per-email is the tighter bound.
+        $max = (int) $this->config->get('password_reset_max_per_hour_per_ip', 30);
         return $this->checkAndIncrementLimit('reset_ip_'.md5($ip), $max, 3600);
     }
 
     public function rateLimitEmail(string $email): bool
     {
-        $max = (int) $this->config->get('password_reset_max_per_day_per_email', 3);
+        $max = (int) $this->config->get('password_reset_max_per_day_per_email', 5);
         return $this->checkAndIncrementLimit('reset_em_'.md5(strtolower(trim($email))), $max, 86400);
     }
 

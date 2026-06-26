@@ -71,11 +71,8 @@
                   <b-icon icon="plus" size="is-small" /> {{ lang('New') }}
                 </span>
 
-                <b-dropdown-item aria-role="listitem" data-test="create-folder" @click="create('dir')">
+                <b-dropdown-item aria-role="listitem" data-test="create-folder" @click="createFolder">
                   <b-icon icon="folder" size="is-small" /> {{ lang('Folder') }}
-                </b-dropdown-item>
-                <b-dropdown-item aria-role="listitem" data-test="create-file" @click="create('file')">
-                  <b-icon icon="file" size="is-small" /> {{ lang('File') }}
                 </b-dropdown-item>
 
               </b-dropdown>
@@ -720,19 +717,19 @@ export default {
         }
       })
     },
-    create(type) {
+    createFolder() {
       this.$dialog.prompt({
         cancelText: this.lang('Cancel'),
         confirmText: this.lang('Create'),
         inputAttrs: {
-          placeholder: type == 'dir' ? 'MyFolder' : 'file.txt',
+          placeholder: 'MyFolder',
           maxlength: 100,
           required: false,
         },
         onConfirm: (value) => {
           this.isLoading = true
           api.createNew({
-            type: type,
+            type: 'dir',
             name: value,
             destination: this.$store.state.cwd.location,
           })

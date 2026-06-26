@@ -14,19 +14,12 @@ describe('Batch download', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
-
   it('prepares a batch-download archive for the selected files', () => {
     // Two files keep this on the archive path: a single selected file now
     // streams directly (no dialog), so we select multiple to exercise the
     // POST /batchdownload "Your file is ready" wiring.
-    createFile('dl1.txt')
-    createFile('dl2.txt')
+    cy.createFile('dl1.txt')
+    cy.createFile('dl2.txt')
     cy.contains('.file-row a.name', 'dl1.txt').should('exist')
     cy.contains('.file-row a.name', 'dl2.txt').should('exist')
 

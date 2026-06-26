@@ -23,14 +23,12 @@ describe('Multi-folder isolation', () => {
       permissions: ['read', 'write', 'upload', 'download'],
     })
     cy.apiPost('/logout')
+    // Seed the fixture file directly in jane's /projects homedir on disk
+    // (storage root is repository/, so /projects -> repository/projects).
+    // Seeding on disk keeps this isolation test independent of how files get
+    // created in the UI.
+    cy.exec('touch repository/projects/iso.txt')
   })
-
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
 
   function switchTo(folder) {
     cy.get('[data-test="folder-switcher"]').click()
@@ -44,11 +42,10 @@ describe('Multi-folder isolation', () => {
     cy.get('[data-test="login-password"]').type('jane12345')
     cy.get('[data-test="login-submit"]').click()
 
-    // Picker -> projects (folder A).
+    // Picker -> projects (folder A). The seeded fixture file is listed here.
     cy.get('[data-test="folder-button"][data-test-path="/projects"]').click()
     cy.get('[data-test="current-folder"]').should('contain.text', 'projects')
 
-    createFile('iso.txt')
     cy.contains('.file-row a.name', 'iso.txt').should('exist')
 
     // Folder B (personal) — the file must not be there.

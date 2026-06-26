@@ -13,15 +13,8 @@ describe('File permissions (chmod)', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
-
   it('changes a file\'s permissions via the Permissions modal', () => {
-    createFile('perm.txt')
+    cy.createFile('perm.txt')
     cy.contains('.file-row a.name', 'perm.txt').should('exist')
 
     cy.contains('.file-row', 'perm.txt').within(() => {

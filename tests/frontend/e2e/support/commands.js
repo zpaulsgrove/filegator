@@ -85,6 +85,25 @@ Cypress.Commands.add('adminCreateUser', (params) => {
 })
 
 /**
+ * Create an empty file in the caller's current folder via the real /createnew
+ * endpoint, then reload so the listing shows it.
+ *
+ * The UI used to expose a "New File" entry in the New menu, but that was
+ * removed from the product (folders only). Specs that need a file fixture
+ * create it through the API instead — createNew writes to the session's
+ * current working directory (it ignores any destination param), so this lands
+ * wherever the app last navigated. The reload re-lists that folder; the app
+ * restores the location from the URL (`cd=`/`folder=`), so a file made in a
+ * subfolder reappears there, not at the root.
+ *
+ * Caller must be logged in (cookie session). Yields nothing.
+ */
+Cypress.Commands.add('createFile', (name) => {
+  cy.apiPost('/createnew', { type: 'file', name })
+  cy.reload()
+})
+
+/**
  * Check a file row's selection checkbox by entry name.
  *
  * The Browser toolbar actions (Copy/Move/Zip/Download) only render once rows

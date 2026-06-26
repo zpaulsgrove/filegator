@@ -14,9 +14,11 @@ describe('File move and copy', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function create(kind, name) {
+  // The New menu only creates folders now; file fixtures come from
+  // cy.createFile (API + reload).
+  function createFolder(name) {
     cy.get('[data-test="new-menu"]').click()
-    cy.get(`[data-test="create-${kind}"]`).click()
+    cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type(name)
     cy.get('.dialog').contains('button', 'Create').click()
   }
@@ -27,8 +29,8 @@ describe('File move and copy', () => {
   }
 
   it('moves a file into a folder', () => {
-    create('folder', 'dest')
-    create('file', 'movable.txt')
+    createFolder('dest')
+    cy.createFile('movable.txt')
     cy.contains('.file-row a.name', 'movable.txt').should('exist')
 
     cy.selectRow('movable.txt')
@@ -43,8 +45,8 @@ describe('File move and copy', () => {
   })
 
   it('copies a file into a folder, leaving the original', () => {
-    create('folder', 'dest')
-    create('file', 'copyable.txt')
+    createFolder('dest')
+    cy.createFile('copyable.txt')
     cy.contains('.file-row a.name', 'copyable.txt').should('exist')
 
     cy.selectRow('copyable.txt')

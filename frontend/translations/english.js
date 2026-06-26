@@ -44,7 +44,6 @@ const data = {
   'Download': 'Download',
   'Copy link': 'Copy link',
   'Done': 'Done',
-  'File': 'File',
   'Drop files to upload': 'Drop files to upload',
   'Close': 'Close',
   'Select Folder': 'Select Folder',

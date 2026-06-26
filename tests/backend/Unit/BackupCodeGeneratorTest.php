@@ -34,7 +34,7 @@ class BackupCodeGeneratorTest extends TestCase
         $this->assertCount(10, array_unique($codes));
         foreach ($codes as $c) {
             // Format: XXXXX-XXXXX
-            $this->assertRegExp('/^[A-Z2-9]{5}-[A-Z2-9]{5}$/', $c);
+            $this->assertMatchesRegularExpression('/^[A-Z2-9]{5}-[A-Z2-9]{5}$/', $c);
         }
     }
 

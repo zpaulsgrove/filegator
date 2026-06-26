@@ -289,7 +289,7 @@ class FilesTest extends TestCase
         $this->assertOk();
 
         $this->assertFileExists(TEST_REPOSITORY.'/john/john2.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/john/john.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/john/john.txt');
     }
 
     public function testRenameMissingfileThrowsException()
@@ -455,8 +455,8 @@ class FilesTest extends TestCase
 
         $this->assertFileExists(TEST_REPOSITORY.'/john/a.txt');
         $this->assertFileExists(TEST_REPOSITORY.'/john/b.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/a.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/b.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/a.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/b.txt');
     }
 
     public function testMoveDirsWithContent()
@@ -493,9 +493,9 @@ class FilesTest extends TestCase
 
         $this->assertOk();
 
-        $this->assertDirectoryNotExists(TEST_REPOSITORY.'/jane');
-        $this->assertDirectoryNotExists(TEST_REPOSITORY.'/sub');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/sub/sub1/f.txt');
+        $this->assertDirectoryDoesNotExist(TEST_REPOSITORY.'/jane');
+        $this->assertDirectoryDoesNotExist(TEST_REPOSITORY.'/sub');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/sub/sub1/f.txt');
 
         $this->assertDirectoryExists(TEST_REPOSITORY.'/john/jane');
         $this->assertDirectoryExists(TEST_REPOSITORY.'/john/sub');
@@ -643,8 +643,8 @@ class FilesTest extends TestCase
         }
 
         // Security invariant: nothing escaped John's homedir.
-        $this->assertFileNotExists(TEST_REPOSITORY.'/jane/evil.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/escape.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/jane/evil.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/escape.txt');
 
         // Jane, listing her own homedir, must not see the smuggled file.
         $this->signIn('jane@example.com', 'jane123');
@@ -920,7 +920,7 @@ class FilesTest extends TestCase
         // applyPathPrefix collapses `../` so destination becomes /john root.
         // The file may have been moved within john's homedir, but it must NOT
         // have landed inside jane's actual /jane folder.
-        $this->assertFileNotExists(TEST_REPOSITORY.'/jane/john-public.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/jane/john-public.txt');
         // jane's secret stays intact regardless.
         $this->assertFileExists(TEST_REPOSITORY.'/jane/secret.txt');
     }
@@ -942,7 +942,7 @@ class FilesTest extends TestCase
         }
 
         // jane's secret content must not have been duplicated into /john.
-        $this->assertFileNotExists(TEST_REPOSITORY.'/john/secret.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/john/secret.txt');
         $this->assertSame('jane-private-payload', file_get_contents(TEST_REPOSITORY.'/jane/secret.txt'));
     }
 
@@ -1122,7 +1122,7 @@ class FilesTest extends TestCase
 
         // And the file is physically inside multiA, not multiB.
         $this->assertFileExists(TEST_REPOSITORY.'/multiA/isolation-marker.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/multiB/isolation-marker.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/multiB/isolation-marker.txt');
     }
 
     // --------------------------------------------------------------------

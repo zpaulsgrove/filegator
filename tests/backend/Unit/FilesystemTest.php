@@ -231,7 +231,7 @@ class FilesystemTest extends TestCase
         $this->assertTrue($ret);
 
         $this->assertFileExists(TEST_REPOSITORY.'/sub/sub1/loremfile.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/loremfile.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/loremfile.txt');
     }
 
     public function testUpcountingFilenameOrDirname()
@@ -557,7 +557,7 @@ class FilesystemTest extends TestCase
 
         $this->storage->deleteFile('sample22.txt');
 
-        $this->assertFileNotExists(TEST_REPOSITORY.'/sample22.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/sample22.txt');
     }
 
     public function testCreateAndDeleteDirectory()
@@ -569,8 +569,8 @@ class FilesystemTest extends TestCase
 
         $this->storage->deleteDir('sample22');
 
-        $this->assertDirectoryNotExists(TEST_REPOSITORY.'/sample22');
-        $this->assertDirectoryNotExists(TEST_REPOSITORY.'/sample22/subsample');
+        $this->assertDirectoryDoesNotExist(TEST_REPOSITORY.'/sample22');
+        $this->assertDirectoryDoesNotExist(TEST_REPOSITORY.'/sample22/subsample');
     }
 
     public function testReadFileStream()
@@ -781,7 +781,7 @@ class FilesystemTest extends TestCase
         $this->storage->createDir('/tmp/sample22/', 'subsample2');
         $this->storage->createFile('/tmp/sample22/subsample2', 'zzzz');
 
-        $this->assertDirectoryNotExists(TEST_REPOSITORY.'/jane/sample22');
+        $this->assertDirectoryDoesNotExist(TEST_REPOSITORY.'/jane/sample22');
 
         $this->storage->copyDir('/tmp/sample22', '/jane/');
 

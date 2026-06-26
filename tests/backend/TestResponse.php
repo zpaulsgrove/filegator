@@ -10,9 +10,6 @@
 
 namespace Tests;
 
-use PHPUnit\Framework\Constraint\ArraySubset;
-use PHPUnit\Util\InvalidArgumentHelper;
-
 trait TestResponse
 {
     public function assertResponseJsonHas(array $data, $strict = false)
@@ -57,25 +54,42 @@ trait TestResponse
         return $decodedResponse;
     }
 
+    /**
+     * Recursive "array contains subset" assertion. PHPUnit's built-in
+     * assertArraySubset() and the ArraySubset constraint were removed in
+     * PHPUnit 9, so we keep a self-contained equivalent here. With
+     * $checkForObjectIdentity (strict) values are compared with ===.
+     */
     public static function assertArraySubset($subset, $array, bool $checkForObjectIdentity = false, string $message = ''): void
     {
-        if (! (\is_array($subset) || $subset instanceof ArrayAccess)) {
-            throw InvalidArgumentHelper::factory(
-                1,
-                'array or ArrayAccess'
-            );
+        self::assertTrue(
+            self::isArraySubset($subset, $array, $checkForObjectIdentity),
+            $message !== '' ? $message : 'Failed asserting that an array contains the expected subset.'
+        );
+    }
+
+    private static function isArraySubset($subset, $array, bool $strict): bool
+    {
+        if (! (\is_array($subset) || $subset instanceof \ArrayAccess)
+            || ! (\is_array($array) || $array instanceof \ArrayAccess)) {
+            return false;
         }
 
-        if (! (\is_array($array) || $array instanceof ArrayAccess)) {
-            throw InvalidArgumentHelper::factory(
-                2,
-                'array or ArrayAccess'
-            );
+        foreach ($subset as $key => $value) {
+            if (! isset($array[$key]) && ! (\is_array($array) && \array_key_exists($key, $array))) {
+                return false;
+            }
+
+            if (\is_array($value)) {
+                if (! self::isArraySubset($value, $array[$key], $strict)) {
+                    return false;
+                }
+            } elseif ($strict ? $array[$key] !== $value : $array[$key] != $value) {
+                return false;
+            }
         }
 
-        $constraint = new ArraySubset($subset, $checkForObjectIdentity);
-
-        self::assertThat($array, $constraint, $message);
+        return true;
     }
 
     public function getStatusCode()

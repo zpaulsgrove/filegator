@@ -945,11 +945,16 @@ class FilesystemTest extends TestCase
         $this->storage->createDir('/', 'parent');
         $this->storage->createDir('/parent', 'child');
         $this->storage->createFile('/parent', 'a.txt');
+        // Keep the sub-folder non-empty: an empty leaf directory is not yielded
+        // by PHP 8.1's recursive directory iterator, so the recursion would
+        // silently never reach it and the assertion would be testing nothing.
+        $this->storage->createFile('/parent/child', 'b.txt');
 
         // Pin known starting modes distinct from the target so the result is
         // unambiguous regardless of the umask-dependent create-time default.
         $this->storage->chmod('/parent/child', 750);
         $this->storage->chmod('/parent/a.txt', 600);
+        $this->storage->chmod('/parent/child/b.txt', 600);
 
         // exercises the $recursive == 'folders' branch (dir matches, file skipped)
         $ret = $this->storage->chmod('/parent', 700, 'folders');
@@ -960,10 +965,14 @@ class FilesystemTest extends TestCase
             '700',
             substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
         );
-        // ...but the file was skipped (left at its pinned mode).
+        // ...but the files were skipped (left at their pinned mode).
         $this->assertEquals(
             '600',
             substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+        $this->assertEquals(
+            '600',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
         );
     }
 

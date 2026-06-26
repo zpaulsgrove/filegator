@@ -746,4 +746,153 @@ class AdminTest extends TestCase
         $this->assertOk();
         $this->assertResponseJsonHas(['data' => ['username' => 'john@example.com']]);
     }
+
+    // --------------------------------------------------------------------
+    // Folder-access audit: the inverse view of listUsers (folder -> users),
+    // with inherited access from a parent/root homedir surfaced.
+    // --------------------------------------------------------------------
+
+    public function testFolderAccessAuditIsAdminOnly()
+    {
+        $this->signOut();
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertStatus(404);
+
+        $this->signIn('john@example.com', 'john123');
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertStatus(404);
+    }
+
+    public function testFolderAccessAuditListsAssignedFolders()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertOk();
+
+        $data = $this->decodeResponseJson()['data'];
+        $this->assertSame('/', $data['separator']);
+
+        $byPath = array_column($data['folders'], null, 'path');
+        // Every assigned homedir from the fixture shows up as a row.
+        foreach (['/', '/john', '/jane', '/multiA', '/multiB'] as $p) {
+            $this->assertArrayHasKey($p, $byPath, "missing folder row {$p}");
+        }
+        // user_count matches the number of access entries.
+        foreach ($data['folders'] as $folder) {
+            $this->assertSame(count($folder['access']), $folder['user_count']);
+        }
+    }
+
+    public function testFolderAccessAuditSurfacesInheritedAccess()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertOk();
+
+        $byPath = array_column($this->decodeResponseJson()['data']['folders'], null, 'path');
+        $john = array_column($byPath['/john']['access'], null, 'username');
+
+        // Direct owner.
+        $this->assertArrayHasKey('john@example.com', $john);
+        $this->assertFalse($john['john@example.com']['inherited']);
+        $this->assertSame('/john', $john['john@example.com']['granted_by']);
+
+        // Root admin reaches it by inheritance.
+        $this->assertArrayHasKey('admin@example.com', $john);
+        $this->assertTrue($john['admin@example.com']['inherited']);
+        $this->assertSame('/', $john['admin@example.com']['granted_by']);
+
+        // A sibling-folder user must NOT appear.
+        $this->assertArrayNotHasKey('jane@example.com', $john);
+    }
+
+    public function testFolderAccessAuditListsMultipleOwnersOfOneFolder()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        // A second user assigned the very same folder as john.
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'Second John',
+            'username' => 'john2@example.com',
+            'role' => 'user',
+            'permissions' => [],
+            'password' => 'pass123',
+            'homedir' => '/john',
+        ]);
+        $this->assertOk();
+
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertOk();
+        $folders = $this->decodeResponseJson()['data']['folders'];
+
+        // Still a single /john row, not one per owner.
+        $johnRows = array_values(array_filter($folders, function ($f) {
+            return $f['path'] === '/john';
+        }));
+        $this->assertCount(1, $johnRows);
+
+        // Both direct owners are listed under it.
+        $direct = array_column(array_filter($johnRows[0]['access'], function ($a) {
+            return ! $a['inherited'];
+        }), 'username');
+        $this->assertContains('john@example.com', $direct);
+        $this->assertContains('john2@example.com', $direct);
+    }
+
+    public function testFolderAccessAuditCollapsesTrailingSeparatorDuplicates()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        // Two users on the same folder, one with a trailing separator.
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'Clean', 'username' => 'clean@example.com', 'role' => 'user',
+            'permissions' => [], 'password' => 'pass123', 'homedir' => 'clientA',
+        ]);
+        $this->assertOk();
+        $this->sendRequest('POST', '/storeuser', [
+            'name' => 'Slashy', 'username' => 'slashy@example.com', 'role' => 'user',
+            'permissions' => [], 'password' => 'pass123', 'homedir' => 'clientA/',
+        ]);
+        $this->assertOk();
+
+        $this->sendRequest('GET', '/admin/folder-access-audit');
+        $this->assertOk();
+        $folders = $this->decodeResponseJson()['data']['folders'];
+
+        // '/clientA' and '/clientA/' fold into exactly one row.
+        $rows = array_values(array_filter($folders, function ($f) {
+            return $f['path'] === '/clientA';
+        }));
+        $this->assertCount(1, $rows);
+
+        $owners = array_column($rows[0]['access'], 'username');
+        $this->assertContains('clean@example.com', $owners);
+        $this->assertContains('slashy@example.com', $owners);
+    }
+
+    public function testFolderAccessAuditPathModeInspectsArbitraryFolder()
+    {
+        $this->signIn('admin@example.com', 'admin123');
+
+        // A subfolder of /john that is not itself an assigned homedir.
+        $this->sendRequest('GET', '/admin/folder-access-audit&path='.rawurlencode('/john/2024'));
+        $this->assertOk();
+
+        $data = $this->decodeResponseJson()['data'];
+        $this->assertCount(1, $data['folders']);
+        $folder = $data['folders'][0];
+        $this->assertSame('/john/2024', $folder['path']);
+
+        $byUser = array_column($folder['access'], null, 'username');
+        // john reaches it (inherited from /john); admin reaches it (inherited from /).
+        $this->assertArrayHasKey('john@example.com', $byUser);
+        $this->assertTrue($byUser['john@example.com']['inherited']);
+        $this->assertSame('/john', $byUser['john@example.com']['granted_by']);
+        $this->assertArrayHasKey('admin@example.com', $byUser);
+        $this->assertTrue($byUser['admin@example.com']['inherited']);
+        // A sibling-folder user cannot reach it.
+        $this->assertArrayNotHasKey('jane@example.com', $byUser);
+    }
 }

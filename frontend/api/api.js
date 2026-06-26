@@ -169,6 +169,16 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  folderAccessAudit(params = {}) {
+    // Admin-only. Without `path` returns every assigned folder with its
+    // users; with `path` returns just that folder (browse-tree inspect).
+    return new Promise((resolve, reject) => {
+      const config = params.path ? { params: { path: params.path } } : {}
+      axios.get('admin/folder-access-audit', config)
+        .then(res => resolve(res.data.data))
+        .catch(error => reject(error))
+    })
+  },
   deleteUser(params) {
     return new Promise((resolve, reject) => {
       const body = {}

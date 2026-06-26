@@ -373,6 +373,16 @@ return [
     ],
     [
         'route' => [
+            'GET', '/admin/folder-access-audit', '\Filegator\Controllers\AdminController@folderAccessAudit',
+        ],
+        'roles' => [
+            'admin',
+        ],
+        'permissions' => [
+        ],
+    ],
+    [
+        'route' => [
             'POST', '/storeuser', '\Filegator\Controllers\AdminController@storeUser',
         ],
         'roles' => [

@@ -73,6 +73,108 @@ class AdminController
         return $response->json($rows);
     }
 
+    /**
+     * Folder-access audit: the inverse of listUsers. Instead of "which folders
+     * can this user reach", it answers "which users can reach this folder",
+     * including access INHERITED from a parent homedir (a user rooted at
+     * '/clients' — or an admin at '/' — reaches every folder beneath it).
+     *
+     * Access is computed purely from homedirs (the sandbox model): role and
+     * permissions never widen reach, they only describe what a user may do once
+     * scoped to a folder. permissions are returned for the admin's context.
+     *
+     * Two modes, same response shape ({separator, folders: [...]}):
+     *  - no `path`  -> every distinct assigned homedir, de-duped by normalised
+     *                  path so '/clientA' and '/clientA/' fold into one row;
+     *  - `path` set -> just that one folder (browse-tree inspect). The supplied
+     *                  path is relative to the acting admin's home directory, so
+     *                  it is resolved to root-relative space first.
+     */
+    public function folderAccessAudit(Request $request, Response $response)
+    {
+        $separator = $this->storage->getSeparator();
+
+        // Snapshot the user list once. homedirs drive the whole computation;
+        // the rest is carried through for display.
+        $users = [];
+        foreach ($this->auth->allUsers()->all() as $user) {
+            $row = $user->jsonSerialize();
+            $users[] = [
+                'username' => $row['username'],
+                'name' => $row['name'],
+                'role' => $row['role'],
+                'permissions' => $row['permissions'],
+                'homedirs' => Homedirs::fromArrayRow($row),
+            ];
+        }
+
+        $folderKeys = $this->auditFolderKeys($request, $separator, $users);
+
+        $folders = [];
+        foreach ($folderKeys as $key) {
+            // Canonical, leading-separator display form; '' is the storage root.
+            $displayPath = $key === '' ? $separator : $separator.$key;
+
+            $access = [];
+            foreach ($users as $u) {
+                $grantedBy = Homedirs::grantingHomedir($u['homedirs'], $displayPath, $separator);
+                if ($grantedBy === null) {
+                    continue;
+                }
+                $access[] = [
+                    'username' => $u['username'],
+                    'name' => $u['name'],
+                    'role' => $u['role'],
+                    'permissions' => $u['permissions'],
+                    'granted_by' => $grantedBy,
+                    'inherited' => Homedirs::normalizePath($grantedBy, $separator) !== $key,
+                ];
+            }
+
+            $folders[] = [
+                'path' => $displayPath,
+                'user_count' => count($access),
+                'access' => $access,
+            ];
+        }
+
+        return $response->json([
+            'separator' => $separator,
+            'folders' => $folders,
+        ]);
+    }
+
+    /**
+     * Resolve the set of normalised folder keys to audit for the request.
+     */
+    protected function auditFolderKeys(Request $request, string $separator, array $users): array
+    {
+        $pathInput = $request->input('path', null);
+
+        if (is_string($pathInput) && trim($pathInput) !== '') {
+            // Browse-tree inspect. Reuse the exact prefix-join storeUser applies
+            // (admin homedir + supplied path): identity for a root admin,
+            // correct scoping for a non-root one.
+            $adminBase = rtrim((string) ($this->auth->user()->getHomeDirs()[0] ?? ''), $separator);
+            $resolved = $adminBase.$separator.ltrim($pathInput, $separator);
+
+            return [Homedirs::normalizePath($resolved, $separator)];
+        }
+
+        // Assigned mode: union of every homedir, keyed by normalised path so
+        // duplicates (trailing separator, etc.) collapse to one row.
+        $keys = [];
+        foreach ($users as $u) {
+            foreach ($u['homedirs'] as $h) {
+                $keys[Homedirs::normalizePath($h, $separator)] = true;
+            }
+        }
+        $keys = array_keys($keys);
+        sort($keys);
+
+        return $keys;
+    }
+
     public function storeUser(User $user, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)
     {
         // Pre-validation FIRST so a malformed request does not burn a TOTP /

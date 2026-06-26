@@ -111,7 +111,7 @@ const funcs = {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
     },
     formatDate(timestamp) {
-      return moment.unix(timestamp).format(store.state.config.date_format ? store.state.config.date_format : 'YY/MM/DD hh:mm:ss')
+      return moment.unix(timestamp).format(store.state.config.date_format ? store.state.config.date_format : 'MM/DD/YY hh:mm:ss')
     },
     checkUser() {
       api.getUser()

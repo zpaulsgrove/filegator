@@ -32,7 +32,7 @@ return [
         'upload_simultaneous' => 3,
         'default_archive_name' => 'archive.zip',
         'editable' => ['.txt', '.css', '.js', '.ts', '.html', '.php', '.json', '.md'],
-        'date_format' => 'YY/MM/DD hh:mm:ss', // see: https://momentjs.com/docs/#/displaying/format/
+        'date_format' => 'MM/DD/YY hh:mm:ss', // US convention (MM/DD/YY); see: https://momentjs.com/docs/#/displaying/format/
         'guest_redirection' => '', // useful for external auth adapters
         'search_simultaneous' => 5,
         'filter_entries' => [],

@@ -132,12 +132,12 @@ export default {
   font-size: 0.9em;
   line-height: inherit;
   white-space: nowrap;
-  color: #3273dc;
+  color: #C9A23E;
   cursor: pointer;
   text-decoration: none;
 }
 .login-link:hover {
-  color: #363636;
+  color: #a07f2c;
   text-decoration: underline;
 }
 .login-link:focus {

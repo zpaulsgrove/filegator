@@ -117,6 +117,16 @@ class TokenStoreTest extends TestCase
         $this->assertFalse($this->store->markUsed('hashA'));
     }
 
+    public function testMarkUsedAcceptsTokenExpiringExactlyNow()
+    {
+        // expires == now must still be consumable: markUsed() uses `< now`, so a
+        // token whose expiry is exactly the current second is not yet expired.
+        // Pins the boundary so `<` cannot weaken to `<=`.
+        $this->store->add('alice', 'edge', 0, '1.1.1.1');
+
+        $this->assertTrue($this->store->markUsed('edge'));
+    }
+
     public function testAddInvalidatesPriorUnusedTokenForSameUser()
     {
         $this->store->add('alice', 'first', 3600, '1.1.1.1');

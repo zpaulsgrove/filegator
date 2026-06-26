@@ -18,25 +18,26 @@ describe('File operations', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  // Create via the toolbar "New" dropdown, which opens a Buefy prompt
-  // dialog (rendered globally, targeted by its .dialog class).
-  function createEntry(kind, name) {
+  // Create a folder via the toolbar "New" dropdown, which opens a Buefy prompt
+  // dialog (rendered globally, targeted by its .dialog class). The menu only
+  // creates folders now; file fixtures come from cy.createFile (API + reload).
+  function createFolder(name) {
     cy.get('[data-test="new-menu"]').click()
-    cy.get(`[data-test="create-${kind}"]`).click()
+    cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type(name)
     cy.get('.dialog').contains('button', 'Create').click()
   }
 
   it('creates a folder and a file', () => {
-    createEntry('folder', 'cyfolder')
+    createFolder('cyfolder')
     cy.contains('.file-row a.name', 'cyfolder').should('exist')
 
-    createEntry('file', 'cyfile.txt')
+    cy.createFile('cyfile.txt')
     cy.contains('.file-row a.name', 'cyfile.txt').should('exist')
   })
 
   it('renames a file', () => {
-    createEntry('file', 'cyfile.txt')
+    cy.createFile('cyfile.txt')
     cy.contains('.file-row a.name', 'cyfile.txt').should('exist')
 
     // Open the row's single-action menu and choose Rename. The dropdown
@@ -54,7 +55,7 @@ describe('File operations', () => {
   })
 
   it('deletes a file', () => {
-    createEntry('file', 'doomed.txt')
+    cy.createFile('doomed.txt')
     cy.contains('.file-row a.name', 'doomed.txt').should('exist')
 
     cy.contains('.file-row', 'doomed.txt').within(() => {

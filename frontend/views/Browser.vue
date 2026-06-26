@@ -201,6 +201,7 @@ import Upload from './partials/Upload'
 import api from '../api/api'
 import VueClipboard from 'vue-clipboard2'
 import { needsFolderPicker } from '../mixins/postLogin'
+import { isMfaNudgeDismissed, markMfaNudgeDismissed } from '../utils/mfaBanner'
 import _ from 'lodash'
 
 Vue.use(VueClipboard)
@@ -226,10 +227,11 @@ export default {
       // nothing is pending, so the active_homedir watcher below stays inert
       // for ordinary in-session folder switches.
       deferredCd: null,
-      // MFA nudge banner: dismissed-per-user so it stays hidden once closed but
-      // reappears for anyone who still hasn't enrolled. Keyed by username so a
-      // shared browser doesn't carry one user's dismissal to the next.
-      mfaBannerDismissed: this.isMfaBannerDismissed(),
+      // MFA nudge banner: dismissed per login session, not permanently. The
+      // dismissal is cleared on each login (see resetMfaNudgeDismissals in
+      // Login.vue), so an unenrolled user is nudged again every login until
+      // they actually set up MFA.
+      mfaBannerDismissed: isMfaNudgeDismissed(this.$store.state.user && this.$store.state.user.username),
     }
   },
   computed: {
@@ -550,25 +552,10 @@ export default {
     download(item) {
       window.open(this.getDownloadLink(item.path), '_blank')
     },
-    mfaBannerKey() {
-      const user = this.$store.state.user
-      return 'mfa_banner_dismissed_' + ((user && user.username) || '')
-    },
-    isMfaBannerDismissed() {
-      try {
-        return window.localStorage.getItem(this.mfaBannerKey()) === '1'
-      } catch (e) {
-        // Private-mode / disabled storage: just show the banner.
-        return false
-      }
-    },
     dismissMfaBanner() {
+      const user = this.$store.state.user
       this.mfaBannerDismissed = true
-      try {
-        window.localStorage.setItem(this.mfaBannerKey(), '1')
-      } catch (e) {
-        // Non-persistent dismissal is fine if storage is unavailable.
-      }
+      markMfaNudgeDismissed(user && user.username)
     },
     search() {
       this.$modal.open({

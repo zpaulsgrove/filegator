@@ -33,9 +33,12 @@
     // mutants. 30s lets far more of them actually run; the weekly cadence absorbs
     // the longer wall-clock.
     "timeout": 30,
-    // First functional baseline (PHPUnit 9, pcov): MSI 56%, Covered MSI 70%,
-    // mutation coverage 80%. Kept at 0 (non-blocking) until the baseline settles;
-    // ratchet toward the measured Covered MSI once a couple of clean runs land.
+    // Functional baseline (PHPUnit 9, pcov, timeout 30): MSI 49%, Covered MSI 55%,
+    // mutation coverage 90% over the ~383 of 907 mutants that finish in time — the
+    // other ~524 exceed 30s (argon2 / sodium / HTTP covering tests) and are skipped,
+    // so this reflects ~42% of mutants. Kept at 0 (non-blocking) until the baseline
+    // settles; ratchet toward the measured Covered MSI once a couple of clean runs
+    // land and the skipped fraction is understood.
     "minMsi": 0,
     "minCoveredMsi": 0
 }

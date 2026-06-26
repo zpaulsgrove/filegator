@@ -38,17 +38,19 @@
     // mutants. 30s lets far more of them actually run; the weekly cadence absorbs
     // the longer wall-clock.
     "timeout": 30,
-    // Baseline on CI (PHP 8.3, pcov, timeout 30), measured across three dispatched
-    // runs on master: Covered MSI ~67-68%, MSI ~61-62%, mutation coverage ~91%.
+    // Baseline on CI (PHP 8.3, pcov, timeout 30), measured across four dispatched
+    // runs on master: Covered MSI ~66.4-68%, MSI ~61-62%, mutation coverage ~91%.
     // Many mutants exceed 30s (argon2 / sodium / HTTP covering tests) and are
     // skipped, so raw MSI swings with CI load — gate only on Covered MSI, which is
     // computed over the mutants that actually run and is stable run-to-run.
     //
-    // minCoveredMsi is set to 60: ~8 points below the measured ~68 so normal
-    // variance can't false-fail, while a real drop in assertion strength still
-    // trips it. Ratchet upward as coverage of the slow paths improves. minMsi
-    // stays 0 on purpose — it is dominated by the timeout-skip count, not by test
-    // quality, so gating on it would be flaky.
+    // minCoveredMsi is set to 64: ~2.4 points below the lowest observed value
+    // (66.4%) so normal run-to-run variance (~1.5 pts) can't false-fail, while a
+    // real drop in assertion strength still trips it. Ratcheted up from 60 after
+    // Infection itself flagged the floor was 6+ points below measured. Keep
+    // ratcheting as coverage of the slow paths improves. minMsi stays 0 on
+    // purpose — it is dominated by the timeout-skip count, not by test quality,
+    // so gating on it would be flaky.
     "minMsi": 0,
-    "minCoveredMsi": 60
+    "minCoveredMsi": 64
 }

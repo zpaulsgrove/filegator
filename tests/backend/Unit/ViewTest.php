@@ -26,6 +26,6 @@ class ViewTest extends TestCase
         $service = new Vuejs($config_mock);
         $service->init();
 
-        $this->assertRegexp('/testapp/', $service->getIndexPage());
+        $this->assertMatchesRegularExpression('/testapp/', $service->getIndexPage());
     }
 }

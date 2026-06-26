@@ -78,7 +78,7 @@ class TmpfsTest extends TestCase
 
         $this->service->remove('a.txt');
 
-        $this->assertFileNotExists(TEST_TMP_PATH.'a.txt');
+        $this->assertFileDoesNotExist(TEST_TMP_PATH.'a.txt');
     }
 
     public function testCheckExistingFile()
@@ -128,7 +128,7 @@ class TmpfsTest extends TestCase
         ]);
 
         $this->assertFileExists(TEST_TMP_PATH.'fresh.txt');
-        $this->assertFileNotExists(TEST_TMP_PATH.'old.txt');
+        $this->assertFileDoesNotExist(TEST_TMP_PATH.'old.txt');
     }
 
     public function testGarbageIsNotDeletedEveryTime()

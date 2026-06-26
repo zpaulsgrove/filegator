@@ -379,8 +379,8 @@ class UploadTest extends TestCase
 
         // Security invariant: the file never lands in Jane's homedir, and never
         // escapes the repository root.
-        $this->assertFileNotExists(TEST_REPOSITORY.'/jane/evil.txt');
-        $this->assertFileNotExists(TEST_REPOSITORY.'/evil.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/jane/evil.txt');
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/evil.txt');
 
         // It is confined to John's own homedir root (the `..` collapsed to '/').
         $this->assertFileExists(TEST_REPOSITORY.'/john/evil.txt');

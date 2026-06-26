@@ -43,4 +43,53 @@ class DatabaseAuthTest extends AuthTest
             )');
         $this->conn->fetch('SELECT * FROM users WHERE username = ?', 'admin');
     }
+
+    /**
+     * user() rebuilds the session hash from the current DB row and compares it
+     * to the hash captured at authentication. If the stored row changes out
+     * from under a live session, the hashes diverge and the session must be
+     * treated as invalid (force re-auth) — these tests pin each component of
+     * buildSessionHash() so a dropped term or a flipped comparison is caught.
+     */
+    public function testValidSessionStillResolvesWhenRowUnchanged()
+    {
+        $this->addAdmin('secret123');
+        $this->assertTrue($this->auth->authenticate('admin@example.com', 'secret123'));
+
+        // Sanity: the matching-hash path returns the user.
+        $this->assertNotNull($this->auth->user());
+    }
+
+    public function testTamperedPasswordForcesReauth()
+    {
+        $this->addAdmin('secret123');
+        $this->auth->authenticate('admin@example.com', 'secret123');
+        $this->assertNotNull($this->auth->user());
+
+        $this->conn->query('UPDATE users SET', ['password' => 'rotated-hash'], 'WHERE username = ?', 'admin@example.com');
+
+        $this->assertNull($this->auth->user(), 'a changed password row must invalidate the live session');
+    }
+
+    public function testTamperedRoleForcesReauth()
+    {
+        $this->addAdmin('secret123');
+        $this->auth->authenticate('admin@example.com', 'secret123');
+        $this->assertNotNull($this->auth->user());
+
+        $this->conn->query('UPDATE users SET', ['role' => 'guest'], 'WHERE username = ?', 'admin@example.com');
+
+        $this->assertNull($this->auth->user(), 'a role change must invalidate the live session');
+    }
+
+    public function testTamperedPermissionsForcesReauth()
+    {
+        $this->addAdmin('secret123');
+        $this->auth->authenticate('admin@example.com', 'secret123');
+        $this->assertNotNull($this->auth->user());
+
+        $this->conn->query('UPDATE users SET', ['permissions' => 'zzzz'], 'WHERE username = ?', 'admin@example.com');
+
+        $this->assertNull($this->auth->user(), 'a permissions change must invalidate the live session');
+    }
 }

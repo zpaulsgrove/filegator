@@ -73,4 +73,17 @@ class JsonFileTest extends AuthTest
         $this->assertFalse($this->auth->consumeBackupCode('admin@example.com', BackupCodeGenerator::normalize('ZZZZZ-99999')));
         $this->assertSame(1, $this->auth->getMfaState('admin@example.com')['backup_codes_remaining']);
     }
+
+    /**
+     * The locked mutateUser() RMW must reject an unknown username (the
+     * $found guard) rather than silently writing nothing — otherwise an
+     * MFA state change against a bad username would no-op without error.
+     */
+    public function testMutatingUnknownUserThrows()
+    {
+        $this->addAdmin();
+
+        $this->expectException(\Exception::class);
+        $this->auth->setMfaSecret('ghost@example.com', 'JBSWY3DPEHPK3PXP');
+    }
 }

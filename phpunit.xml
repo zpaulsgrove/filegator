@@ -17,29 +17,19 @@
           <directory suffix="Test.php">./tests/backend/Feature</directory>
         </testsuite>
     </testsuites>
-    <filter>
-        <whitelist>
+    <coverage>
+        <include>
             <directory suffix=".php">./backend</directory>
-            <exclude>
-              <file>./backend/View.php</file>
-            </exclude>
-        </whitelist>
-    </filter>
-   <logging>
-        <log
-            type="coverage-html"
-            target="tests/backend/coverage"
-        />
-        <log
-            type="testdox-text"
-            target="tests/backend/coverage/testdox.txt"
-        />
-        <log
-            type="coverage-text"
-            target="php://stdout"
-            showUncoveredFiles="true"
-            showOnlySummary="true"
-        />
+        </include>
+        <exclude>
+            <file>./backend/View.php</file>
+        </exclude>
+        <report>
+            <html outputDirectory="tests/backend/coverage"/>
+            <text outputFile="php://stdout" showUncoveredFiles="true" showOnlySummary="true"/>
+        </report>
+    </coverage>
+    <logging>
+        <testdoxText outputFile="tests/backend/coverage/testdox.txt"/>
     </logging>
 </phpunit>
-

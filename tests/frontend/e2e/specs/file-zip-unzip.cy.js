@@ -13,15 +13,8 @@ describe('File zip and unzip', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
-
   it('zips a file then unzips the archive', () => {
-    createFile('a.txt')
+    cy.createFile('a.txt')
     cy.contains('.file-row a.name', 'a.txt').should('exist')
 
     // Zip (toolbar) -> name prompt.

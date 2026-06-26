@@ -40,11 +40,9 @@ describe('Deep-link / folder restoration', () => {
     // the slash in query values (cd=%2Fsub), so assert encoding-agnostically.
     cy.hash().should('include', 'cd=').and('include', 'sub')
 
-    // Create a file inside the subfolder.
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type('inside.txt')
-    cy.get('.dialog').contains('button', 'Create').click()
+    // Create a file inside the subfolder (createFile reloads, and the app
+    // restores /sub from the cd= param, so it lists the file in place).
+    cy.createFile('inside.txt')
 
     // File is visible.
     cy.contains('.file-row a.name', 'inside.txt').should('exist')

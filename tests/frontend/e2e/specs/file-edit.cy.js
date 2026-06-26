@@ -16,15 +16,8 @@ describe('File editing', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
-
   it('opens a text file in the Editor and saves it', () => {
-    createFile('notes.txt')
+    cy.createFile('notes.txt')
     cy.contains('.file-row a.name', 'notes.txt').should('exist')
 
     cy.contains('.file-row', 'notes.txt').within(() => {

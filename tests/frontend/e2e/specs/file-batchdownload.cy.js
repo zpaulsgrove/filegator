@@ -14,15 +14,8 @@ describe('Batch download', () => {
     cy.get('[data-test="new-menu"]').should('be.visible')
   })
 
-  function createFile(name) {
-    cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-file"]').click()
-    cy.get('.dialog input').clear().type(name)
-    cy.get('.dialog').contains('button', 'Create').click()
-  }
-
   it('prepares a batch-download archive for the selected files', () => {
-    createFile('dl.txt')
+    cy.createFile('dl.txt')
     cy.contains('.file-row a.name', 'dl.txt').should('exist')
 
     cy.selectRow('dl.txt')

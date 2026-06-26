@@ -52,9 +52,6 @@
                 <b-dropdown-item aria-role="listitem" data-test="create-folder" @click="create('dir')">
                   <b-icon icon="folder" size="is-small" /> {{ lang('Folder') }}
                 </b-dropdown-item>
-                <b-dropdown-item aria-role="listitem" data-test="create-file" @click="create('file')">
-                  <b-icon icon="file" size="is-small" /> {{ lang('File') }}
-                </b-dropdown-item>
 
               </b-dropdown>
             </a>

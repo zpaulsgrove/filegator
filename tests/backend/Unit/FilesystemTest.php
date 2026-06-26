@@ -915,6 +915,12 @@ class FilesystemTest extends TestCase
         $this->storage->createFile('/parent', 'a.txt');
         $this->storage->createFile('/parent/child', 'b.txt');
 
+        // Pin known starting modes distinct from the target so the assertions
+        // can't be satisfied by the create-time default (which varies by umask).
+        $this->storage->chmod('/parent/child', 750);
+        $this->storage->chmod('/parent/a.txt', 600);
+        $this->storage->chmod('/parent/child/b.txt', 600);
+
         // recursive 'all' walks every entry and chmods both dirs and files
         $ret = $this->storage->chmod('/parent', 755, 'all');
 
@@ -927,6 +933,11 @@ class FilesystemTest extends TestCase
             '755',
             substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
         );
+        // nested file under the sub-folder is reached too
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
+        );
     }
 
     public function testChmodRecursiveFoldersOnlySkipsFiles()
@@ -935,13 +946,24 @@ class FilesystemTest extends TestCase
         $this->storage->createDir('/parent', 'child');
         $this->storage->createFile('/parent', 'a.txt');
 
+        // Pin known starting modes distinct from the target so the result is
+        // unambiguous regardless of the umask-dependent create-time default.
+        $this->storage->chmod('/parent/child', 750);
+        $this->storage->chmod('/parent/a.txt', 600);
+
         // exercises the $recursive == 'folders' branch (dir matches, file skipped)
         $ret = $this->storage->chmod('/parent', 700, 'folders');
 
         $this->assertTrue($ret);
+        // the sub-folder was chmod'd...
         $this->assertEquals(
             '700',
             substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+        // ...but the file was skipped (left at its pinned mode).
+        $this->assertEquals(
+            '600',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
         );
     }
 

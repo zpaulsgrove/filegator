@@ -192,28 +192,35 @@ class Filesystem implements Service
         $path = $this->applyPathPrefix($path);
         $path = Util::normalizePath($path);
         $adapter = $this->storage->getAdapter();
-        
-        $mainResult = $this->chmodItem($path, $permissions);
+
+        // Enumerate the tree BEFORE touching the parent's mode. Restricting the
+        // parent first (e.g. to 0700) can prevent the recursive directory
+        // listing from descending into sub-folders on some platforms/PHP
+        // versions, silently skipping them. Listing the still-traversable
+        // directory first, then chmod-ing children, then the parent last,
+        // yields the same modes without that fragility.
+        $contents = [];
         if ($recursive !== null) {
             if (method_exists($adapter, 'setRecurseManually')) {
                 $adapter->setRecurseManually(true); // this is needed for ftp driver
             }
             $contents = $this->storage->listContents($path, true);
-            foreach ($contents as $item) {
-                try {
-                    if ($item['type'] == 'dir' && ($recursive == 'all' || $recursive == 'folders')) {
-                        $this->chmodItem($item['path'], $permissions);
-                    }
-                    if ($item['type'] == 'file' && ($recursive == 'all' || $recursive == 'files')) {
-                        $this->chmodItem($item['path'], $permissions);
-                    }
-                } catch (\Exception $e) {
-                    continue;
+        }
+
+        foreach ($contents as $item) {
+            try {
+                if ($item['type'] == 'dir' && ($recursive == 'all' || $recursive == 'folders')) {
+                    $this->chmodItem($item['path'], $permissions);
                 }
+                if ($item['type'] == 'file' && ($recursive == 'all' || $recursive == 'files')) {
+                    $this->chmodItem($item['path'], $permissions);
+                }
+            } catch (\Exception $e) {
+                continue;
             }
         }
-        
-        return $mainResult;
+
+        return $this->chmodItem($path, $permissions);
     }
     /**
      * Change file permissions for a single item

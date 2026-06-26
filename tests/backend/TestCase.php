@@ -173,9 +173,17 @@ class TestCase extends BaseTestCase
         if (! is_dir($dir)) {
             return;
         }
+        // Tests may chmod entries to restrictive modes (e.g. the chmod
+        // coverage). Restore traverse/write before cleaning so this works as a
+        // non-root user too — root ignores permissions, but the CI runner does
+        // not and otherwise cannot delete a dir left without owner write/exec.
+        // We own these files, so chmod always succeeds regardless of mode.
+        @chmod($dir, 0777);
         $files = array_diff(scandir($dir), ['.', '..']);
         foreach ($files as $file) {
-            (is_dir("{$dir}/{$file}")) ? $this->delTree("{$dir}/{$file}") : unlink("{$dir}/{$file}");
+            $path = "{$dir}/{$file}";
+            @chmod($path, 0777);
+            (is_dir($path)) ? $this->delTree($path) : @unlink($path);
         }
 
         return rmdir($dir);

@@ -13,6 +13,7 @@ namespace Tests\Unit;
 use Exception;
 use Filegator\Services\Storage\Filesystem;
 use League\Flysystem\Adapter\Local;
+use League\Flysystem\Memory\MemoryAdapter;
 use Tests\TestCase;
 
 /**
@@ -896,5 +897,127 @@ class FilesystemTest extends TestCase
                 ],
             ],
         ]), json_encode($ret));
+    }
+
+    public function testChmodSingleFileWithLocalAdapterReturnsTrue()
+    {
+        $this->storage->createFile('/', 'perm.txt');
+
+        $ret = $this->storage->chmod('/perm.txt', 644);
+
+        $this->assertTrue($ret);
+    }
+
+    public function testChmodRecursiveAllAppliesToFoldersAndFiles()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+        $this->storage->createFile('/parent/child', 'b.txt');
+
+        // Pin known starting modes distinct from the target so the assertions
+        // can't be satisfied by the create-time default (which varies by umask).
+        $this->storage->chmod('/parent/child', 750);
+        $this->storage->chmod('/parent/a.txt', 600);
+        $this->storage->chmod('/parent/child/b.txt', 600);
+
+        // recursive 'all' walks every entry and chmods both dirs and files
+        $ret = $this->storage->chmod('/parent', 755, 'all');
+
+        $this->assertTrue($ret);
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+        // nested file under the sub-folder is reached too
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
+        );
+    }
+
+    public function testChmodRecursiveFoldersOnlySkipsFiles()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+        // Keep the sub-folder non-empty: an empty leaf directory is not yielded
+        // by PHP 8.1's recursive directory iterator, so the recursion would
+        // silently never reach it and the assertion would be testing nothing.
+        $this->storage->createFile('/parent/child', 'b.txt');
+
+        // Pin known starting modes distinct from the target so the result is
+        // unambiguous regardless of the umask-dependent create-time default.
+        $this->storage->chmod('/parent/child', 750);
+        $this->storage->chmod('/parent/a.txt', 600);
+        $this->storage->chmod('/parent/child/b.txt', 600);
+
+        // exercises the $recursive == 'folders' branch (dir matches, file skipped)
+        $ret = $this->storage->chmod('/parent', 700, 'folders');
+
+        $this->assertTrue($ret);
+        // the sub-folder was chmod'd...
+        $this->assertEquals(
+            '700',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+        // ...but the files were skipped (left at their pinned mode).
+        $this->assertEquals(
+            '600',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+        $this->assertEquals(
+            '600',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
+        );
+    }
+
+    public function testChmodRecursiveFilesOnlySkipsFolders()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+
+        $childBefore = substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3);
+
+        // Exercises the $recursive == 'files' branch (file matches, sub-folder
+        // skipped). 0700 keeps the target dir traversable — chmod() also applies
+        // the mode to the path itself, and a non-executable dir (e.g. 0600)
+        // would break the recursive listing for any non-root user.
+        $ret = $this->storage->chmod('/parent', 700, 'files');
+
+        $this->assertTrue($ret);
+        // The file was chmod'd...
+        $this->assertEquals(
+            '700',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+        // ...but the sub-folder was left untouched (files-only mode).
+        $this->assertEquals(
+            $childBefore,
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+    }
+
+    public function testChmodItemThrowsForUnsupportedAdapter()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+        $storage->createFile('/', 'mem.txt');
+
+        // Memory adapter is not Local/Sftp/Ftp so chmodItem hits the default branch
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('Selected adapter does not support unix permissions');
+
+        $storage->chmod('/mem.txt', 644);
     }
 }

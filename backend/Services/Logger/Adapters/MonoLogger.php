@@ -19,6 +19,18 @@ class MonoLogger implements Service, LoggerInterface
 {
     protected $logger;
 
+    /**
+     * Monolog's ErrorHandler installs process-global error/fatal handlers that
+     * chain to the previously-registered one (callPrevious = true). The app is
+     * bootstrapped once per process in production, but anything that re-boots it
+     * — a long-lived worker, or the test suite booting a fresh app per case —
+     * would stack an ever-deeper handler chain on each init(). Under Xdebug that
+     * recursive chain eventually exceeds the function-nesting limit and every
+     * subsequent error turns into a failure. The handlers only need to be
+     * installed once per process, so guard the registration.
+     */
+    private static $globalHandlersRegistered = false;
+
     public function init(array $config = [])
     {
         $this->logger = new Logger('default');
@@ -27,9 +39,12 @@ class MonoLogger implements Service, LoggerInterface
             $this->logger->pushHandler($handler());
         }
 
-        $handler = new ErrorHandler($this->logger);
-        $handler->registerErrorHandler([], true);
-        $handler->registerFatalHandler();
+        if (! self::$globalHandlersRegistered) {
+            $handler = new ErrorHandler($this->logger);
+            $handler->registerErrorHandler([], true);
+            $handler->registerFatalHandler();
+            self::$globalHandlersRegistered = true;
+        }
     }
 
     public function log(string $message, int $level = Logger::INFO)

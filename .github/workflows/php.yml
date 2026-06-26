@@ -1,6 +1,19 @@
 name: PHP
 
-on: [push, pull_request]
+# Run on PRs (where review happens) and on master after merge. Triggering on a
+# bare `push` as well would double every run while a PR is open (push + the
+# pull_request synchronize event both fire on the same commit).
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Cancel superseded runs on the same PR branch. head_ref is set only for
+# pull_request events; pushes fall back to the unique run_id so master runs are
+# never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -13,14 +26,28 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v1
+      uses: actions/checkout@v4
 
     - name: Setup PHP ${{ matrix.php-version }}
       uses: shivammathur/setup-php@8358ee0e2e8afe63c2fb8253d1d52085811ab1e5 # v2
       with:
         php-version: ${{ matrix.php-version }}
         extensions: mbstring, zip, sqlite3, filter
-        coverage: xdebug
+        # Coverage instrumentation is the slowest part of the run, and the
+        # clover report is identical across versions — only enable it on the
+        # one version we upload from.
+        coverage: ${{ matrix.php-version == '8.3' && 'xdebug' || 'none' }}
+
+    - name: Get Composer cache directory
+      id: composer-cache
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.lock') }}
+        restore-keys: composer-${{ matrix.php-version }}-
 
     - name: Install dependencies
       run: composer install --no-interaction
@@ -29,9 +56,17 @@ jobs:
       run: cp configuration_sample.php configuration.php
 
     - name: Execute tests
-      run: XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-clover=coverage.xml
+      # Coverage only on 8.3 (the version we upload). The other versions run the
+      # suite without a coverage driver, so --coverage-clover would error there.
+      run: |
+        if [ "${{ matrix.php-version }}" = "8.3" ]; then
+          XDEBUG_MODE=coverage vendor/bin/phpunit --coverage-clover=coverage.xml
+        else
+          vendor/bin/phpunit --no-coverage
+        fi
 
     - name: Upload coverage to Codecov
+      if: matrix.php-version == '8.3'
       uses: codecov/codecov-action@29386c70ef20e286228c72b668a06fd0e8399192 # v1.5.2
       with:
         token: ${{ secrets.CODECOV_TOKEN }}

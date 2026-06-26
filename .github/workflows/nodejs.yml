@@ -1,6 +1,19 @@
 name: Node
 
-on: [push, pull_request]
+# Run on PRs (where review happens) and on master after merge. Triggering on a
+# bare `push` as well would double every run while a PR is open (push + the
+# pull_request synchronize event both fire on the same commit).
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Cancel superseded runs on the same PR branch. head_ref is set only for
+# pull_request events; pushes fall back to the unique run_id so master runs are
+# never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,17 +30,22 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v1
+      uses: actions/checkout@v4
 
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
+        cache: 'npm'
 
-    - name: npm install and lint
-      run: |
-        npm install
-        npm run lint
+    - name: Install dependencies
+      run: npm ci
+
+    # Lint output is identical across Node versions, so run it only once rather
+    # than redundantly on every matrix leg.
+    - name: Lint
+      if: matrix.node-version == '20.x'
+      run: npm run lint
 
     - name: Run unit tests
       run: npm run test:unit

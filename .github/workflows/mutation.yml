@@ -1,0 +1,49 @@
+name: Mutation
+
+# Mutation testing (Infection) over the security-critical backend services.
+# Much slower than the unit suite and the code changes rarely, so it runs on a
+# weekly schedule plus on-demand rather than on every push/PR. Non-blocking for
+# now (continue-on-error) — establishing the baseline before it becomes a gate.
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  infection:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@8358ee0e2e8afe63c2fb8253d1d52085811ab1e5 # v2
+      with:
+        php-version: '8.3'
+        extensions: mbstring, zip, sqlite3, filter
+        coverage: xdebug
+
+    - name: Install dependencies
+      run: composer install --no-interaction
+
+    - name: Copy configuration.php
+      run: cp configuration_sample.php configuration.php
+
+    - name: Run Infection
+      continue-on-error: true
+      # Single-threaded on purpose: the lockout / rate-limit / replay tests share
+      # on-disk counter state (app tmpfs + tests/backend/tmp), so parallel workers
+      # collide and produce unreliable killed/escaped verdicts. See mutation review.
+      # --only-covering-test-cases keeps the run tractable (the feature suite is slow)
+      # by running just the tests that cover each mutant rather than whole test files.
+      run: XDEBUG_MODE=coverage vendor/bin/infection --threads=1 --only-covering-test-cases --logger-github --no-progress
+
+    - name: Upload mutation report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: infection-log
+        path: tests/backend/infection.log
+        if-no-files-found: ignore

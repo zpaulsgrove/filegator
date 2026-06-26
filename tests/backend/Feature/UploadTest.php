@@ -160,6 +160,15 @@ class UploadTest extends TestCase
     {
         $this->signIn('john@example.com', 'john123');
 
+        // Create the upload source here rather than relying on a sibling test
+        // having left it behind. Under a full run an earlier test happens to
+        // create it, but when the suite is run as a subset (e.g. Infection's
+        // --only-covering-test-cases) this test would otherwise error on a
+        // missing tmp_name file.
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, 'lorem ipsum');
+        fclose($fp);
+
         $file = [
             'tmp_name' => TEST_FILE,
             'full_path' => 'something', // new in php 8.1

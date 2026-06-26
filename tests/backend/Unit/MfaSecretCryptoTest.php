@@ -96,6 +96,67 @@ class MfaSecretCryptoTest extends TestCase
         $this->assertFalse($crypto->isEncrypted(''));
     }
 
+    public function testInitWithoutKeyPathThrows()
+    {
+        $crypto = new MfaSecretCrypto();
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('MfaSecretCrypto requires a `key_path` config entry');
+        $crypto->init([]);
+    }
+
+    public function testInitWithEmptyKeyPathThrows()
+    {
+        $crypto = new MfaSecretCrypto();
+        $this->expectException(\RuntimeException::class);
+        $crypto->init(['key_path' => '']);
+    }
+
+    /**
+     * A keyfile that exists but holds the wrong number of bytes is treated
+     * as malformed: readKeyFromDisk() exhausts its retry/backoff loop and
+     * throws. encrypt() lets that propagate (no try/catch on the create path).
+     */
+    public function testEncryptThrowsOnMalformedKeyFile()
+    {
+        $badPath = TEST_TMP_PATH.'mfa_malformed_encrypt.key';
+        // Wrong length on purpose (not SODIUM_CRYPTO_SECRETBOX_KEYBYTES).
+        file_put_contents($badPath, 'too-short-key-bytes');
+
+        $crypto = $this->makeCrypto($badPath);
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('is missing or malformed');
+            $crypto->encrypt('whatever');
+        } finally {
+            @unlink($badPath);
+        }
+    }
+
+    /**
+     * decrypt() swallows the loadOrCreateKey() failure and returns null so
+     * callers treat the secret as unrecoverable. Drive the same malformed
+     * keyfile through decrypt(): it must hit the catch path, not throw.
+     */
+    public function testDecryptReturnsNullWhenKeyFileMalformed()
+    {
+        // First, produce a valid ciphertext using a good keyfile.
+        $goodCrypto = $this->makeCrypto();
+        $cipher = $goodCrypto->encrypt('JBSWY3DPEHPK3PXP');
+        $this->assertStringStartsWith('v1$', $cipher);
+
+        // Now point a fresh service at a malformed keyfile so key load throws
+        // from inside decrypt()'s try block.
+        $badPath = TEST_TMP_PATH.'mfa_malformed_decrypt.key';
+        file_put_contents($badPath, 'short');
+
+        $crypto = $this->makeCrypto($badPath);
+        try {
+            $this->assertNull($crypto->decrypt($cipher));
+        } finally {
+            @unlink($badPath);
+        }
+    }
+
     /**
      * Spawn N parallel PHP subprocesses, each of which creates a fresh
      * MfaSecretCrypto pointed at the same missing key file and prints the

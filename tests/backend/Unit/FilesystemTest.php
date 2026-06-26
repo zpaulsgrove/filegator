@@ -13,6 +13,7 @@ namespace Tests\Unit;
 use Exception;
 use Filegator\Services\Storage\Filesystem;
 use League\Flysystem\Adapter\Local;
+use League\Flysystem\Memory\MemoryAdapter;
 use Tests\TestCase;
 
 /**
@@ -896,5 +897,85 @@ class FilesystemTest extends TestCase
                 ],
             ],
         ]), json_encode($ret));
+    }
+
+    public function testChmodSingleFileWithLocalAdapterReturnsTrue()
+    {
+        $this->storage->createFile('/', 'perm.txt');
+
+        $ret = $this->storage->chmod('/perm.txt', 644);
+
+        $this->assertTrue($ret);
+    }
+
+    public function testChmodRecursiveAllAppliesToFoldersAndFiles()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+        $this->storage->createFile('/parent/child', 'b.txt');
+
+        // recursive 'all' walks every entry and chmods both dirs and files
+        $ret = $this->storage->chmod('/parent', 755, 'all');
+
+        $this->assertTrue($ret);
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+        $this->assertEquals(
+            '755',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+    }
+
+    public function testChmodRecursiveFoldersOnlySkipsFiles()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+
+        // exercises the $recursive == 'folders' branch (dir matches, file skipped)
+        $ret = $this->storage->chmod('/parent', 700, 'folders');
+
+        $this->assertTrue($ret);
+        $this->assertEquals(
+            '700',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+        );
+    }
+
+    public function testChmodRecursiveFilesOnlySkipsFolders()
+    {
+        $this->storage->createDir('/', 'parent');
+        $this->storage->createDir('/parent', 'child');
+        $this->storage->createFile('/parent', 'a.txt');
+
+        // exercises the $recursive == 'files' branch (file matches, dir skipped)
+        $ret = $this->storage->chmod('/parent', 600, 'files');
+
+        $this->assertTrue($ret);
+        $this->assertEquals(
+            '600',
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+    }
+
+    public function testChmodItemThrowsForUnsupportedAdapter()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+        $storage->createFile('/', 'mem.txt');
+
+        // Memory adapter is not Local/Sftp/Ftp so chmodItem hits the default branch
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('Selected adapter does not support unix permissions');
+
+        $storage->chmod('/mem.txt', 644);
     }
 }

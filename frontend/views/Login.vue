@@ -157,6 +157,7 @@
 import api from '../api/api'
 import QRCode from 'qrcode'
 import { routeAfterLogin } from '../mixins/postLogin'
+import { resetMfaNudgeDismissals } from '../utils/mfaBanner'
 
 export default {
   name: 'Login',
@@ -220,6 +221,10 @@ export default {
             return
           }
           this.$store.commit('setUser', data)
+          // Fresh login: clear any prior "set up MFA" banner dismissal so an
+          // unenrolled user is nudged again this session (and every login
+          // until they enrol). See utils/mfaBanner.js.
+          resetMfaNudgeDismissals()
           // routeAfterLogin handles single vs multi-folder branching.
           // The defensive changeDir is no longer needed: SelectFolder.vue
           // does its own setup for multi-folder users, and routeAfterLogin

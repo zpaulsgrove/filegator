@@ -64,7 +64,6 @@
                 type="text"
                 :placeholder="useBackup ? 'XXXXX-XXXXX' : '123456'"
                 :style="useBackup ? 'font-family: monospace; font-size: 1.1em; letter-spacing: 0.05em; text-transform: uppercase' : 'font-family: monospace; font-size: 1.2em; letter-spacing: 0.15em'"
-                required
                 autocomplete="one-time-code"
                 @input="onMfaInput"
                 ref="mfa"
@@ -115,7 +114,6 @@
                 type="text"
                 placeholder="123456"
                 style="font-family: monospace; font-size: 1.2em; letter-spacing: 0.15em"
-                required
                 autocomplete="one-time-code"
                 @input="error = ''"
                 key="mfa-setup-input"
@@ -238,6 +236,20 @@ export default {
         })
     },
     verifyMfa() {
+      // Validate in JS rather than with a native `required` on the input.
+      // Buefy runs the HTML5 validity check on blur, so a `required` field
+      // dropped the browser's "please fill out this field" message under the
+      // input the moment the user clicked the "Use a backup code" toggle —
+      // and the inserted message shifted the layout enough to swallow that
+      // first click. Same fix and reasoning as the username/password fields
+      // (commit 5daa0ae). The inline error below covers the empty case.
+      if (!this.mfaCode) {
+        this.error = this.lang(this.useBackup
+          ? 'Please enter a backup code.'
+          : 'Please enter the code from your authenticator app.')
+        this.$nextTick(() => this.$refs.mfa && this.$refs.mfa.focus())
+        return
+      }
       api.loginMfa({ code: this.mfaCode, useBackup: this.useBackup, nonce: this.mfaNonce })
         .then(user => {
           this.$store.commit('setUser', user)
@@ -257,6 +269,11 @@ export default {
       }
     },
     completeSetup() {
+      // Same JS-validation rationale as verifyMfa(): no native `required`.
+      if (!this.mfaCode) {
+        this.error = this.lang('Please enter the code from your authenticator app.')
+        return
+      }
       api.loginMfaSetup({ code: this.mfaCode, nonce: this.mfaNonce })
         .then(res => {
           this.pendingUser = res.user
@@ -274,6 +291,7 @@ export default {
     toggleBackup() {
       this.useBackup = !this.useBackup
       this.mfaCode = ''
+      this.error = ''
     },
     cancel() {
       api.loginMfaCancel().catch(() => {})

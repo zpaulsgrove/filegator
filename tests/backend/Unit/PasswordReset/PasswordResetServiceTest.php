@@ -49,12 +49,9 @@ class PasswordResetServiceTest extends TestCase
 
     private function makeService(array $config = [], array $init = []): PasswordResetService
     {
-        // Mirror MonoLogger's lenient signature (level defaulted) — the interface
-        // marks $level required but the service calls log() with one arg, so a
-        // strict interface mock would reject it.
-        $logger = new class() implements LoggerInterface {
-            public function log(string $message, int $level = 0) {}
-        };
+        // LoggerInterface::log() now defaults $level, so a plain interface mock
+        // accepts the single-argument calls the service makes.
+        $logger = $this->createMock(LoggerInterface::class);
         $service = new PasswordResetService(
             $this->fakeAuth,
             new InMemoryMailer(),

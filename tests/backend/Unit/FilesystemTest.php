@@ -951,13 +951,24 @@ class FilesystemTest extends TestCase
         $this->storage->createDir('/parent', 'child');
         $this->storage->createFile('/parent', 'a.txt');
 
-        // exercises the $recursive == 'files' branch (file matches, dir skipped)
-        $ret = $this->storage->chmod('/parent', 600, 'files');
+        $childBefore = substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3);
+
+        // Exercises the $recursive == 'files' branch (file matches, sub-folder
+        // skipped). 0700 keeps the target dir traversable — chmod() also applies
+        // the mode to the path itself, and a non-executable dir (e.g. 0600)
+        // would break the recursive listing for any non-root user.
+        $ret = $this->storage->chmod('/parent', 700, 'files');
 
         $this->assertTrue($ret);
+        // The file was chmod'd...
         $this->assertEquals(
-            '600',
+            '700',
             substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+        );
+        // ...but the sub-folder was left untouched (files-only mode).
+        $this->assertEquals(
+            $childBefore,
+            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
         );
     }
 

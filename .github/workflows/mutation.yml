@@ -40,12 +40,17 @@ jobs:
       # collide and produce unreliable killed/escaped verdicts. See mutation review.
       # --only-covering-test-cases keeps the run tractable (the feature suite is slow)
       # by running just the tests that cover each mutant rather than whole test files.
+      # The JSON report (per-mutant verdicts + MSI summary, for tracking the
+      # baseline over time) is configured via logs.json in infection.json5 —
+      # Infection 0.29 has no --logger-json CLI flag.
       run: vendor/bin/infection --threads=1 --only-covering-test-cases --logger-github --no-progress
 
     - name: Upload mutation report
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: infection-log
-        path: tests/backend/infection.log
+        name: infection-report
+        path: |
+          tests/backend/infection.log
+          tests/backend/infection.json
         if-no-files-found: ignore

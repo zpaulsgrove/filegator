@@ -8,6 +8,7 @@
 
 /tests/backend/coverage
 /tests/backend/infection.log
+/tests/backend/infection.json
 /tests/backend/tmp/repository/*
 /tests/frontend/e2e/videos/
 /tests/frontend/e2e/screenshots/

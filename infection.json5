@@ -21,7 +21,11 @@
         "@default": true
     },
     "logs": {
-        "text": "tests/backend/infection.log"
+        "text": "tests/backend/infection.log",
+        // Machine-readable report (per-mutant verdicts + MSI summary) for tracking
+        // the baseline over time. Configured here, not via a CLI flag (Infection
+        // 0.29 has no --logger-json option).
+        "json": "tests/backend/infection.json"
     },
     "testFramework": "phpunit",
     // The covering tests for this code are slow (argon2 password hashing, sodium

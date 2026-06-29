@@ -179,6 +179,15 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  auditLog(params = {}) {
+    // Admin-only. Returns recent file-activity events ({events: [...]}).
+    // Optional filters: action, user, from, to (unix-epoch bounds).
+    return new Promise((resolve, reject) => {
+      axios.get('admin/audit-log', { params })
+        .then(res => resolve(res.data.data))
+        .catch(error => reject(error))
+    })
+  },
   deleteUser(params) {
     return new Promise((resolve, reject) => {
       const body = {}

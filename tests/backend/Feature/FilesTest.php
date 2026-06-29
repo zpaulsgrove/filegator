@@ -157,6 +157,44 @@ class FilesTest extends TestCase
         $this->assertOk();
     }
 
+    public function testDeleteRecordsAuditWithRootRelativePath()
+    {
+        $logFile = TEST_TMP_PATH.'audit_log.jsonl';
+        $keyPath = TEST_TMP_PATH.'audit_encryption.key';
+        @unlink($logFile);
+        @unlink($logFile.'.pruned');
+
+        $username = 'john@example.com';
+        $this->signIn($username, 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/john.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [
+                ['type' => 'file', 'path' => '/john.txt', 'name' => 'john.txt', 'time' => $this->timestamp],
+            ],
+        ]);
+        $this->assertOk();
+
+        // Read the encrypted log back through a fresh service instance using
+        // the same key file the request created.
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init(['log_file' => $logFile, 'key_path' => $keyPath, 'max_age_days' => 30]);
+
+        $events = $audit->query();
+        $this->assertCount(1, $events);
+        $this->assertSame('delete', $events[0]['action']);
+        $this->assertSame($username, $events[0]['user']);
+        // John's homedir is /john, so his homedir-relative '/john.txt' is
+        // recorded in root-relative space — not ambiguous across users.
+        $this->assertSame('/john/john.txt', $events[0]['path']);
+    }
+
     public function testDownloadFileHeaders()
     {
         $username = 'john@example.com';

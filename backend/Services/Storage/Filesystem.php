@@ -52,7 +52,7 @@ class Filesystem implements Service
             $destination = $this->upcountName($destination);
         }
 
-        $this->storage->put($destination, '');
+        return $this->storage->put($destination, '');
     }
 
     public function fileExists(string $path)
@@ -112,6 +112,10 @@ class Filesystem implements Service
                 $this->storage->copy($file['path'], $this->joinPaths($real_destination, $path));
             }
         }
+
+        // No per-file status is tracked above; reaching here without an
+        // exception is the success signal callers (e.g. the audit log) gate on.
+        return true;
     }
 
     public function deleteDir(string $path)

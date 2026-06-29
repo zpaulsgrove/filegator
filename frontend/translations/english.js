@@ -117,6 +117,13 @@ const data = {
   'Showing access for {0}': 'Showing access for {0}',
   'no read': 'no read',
   'User is scoped here but cannot list it without read permission': 'User is scoped here but cannot list it without read permission',
+  'Audit Log': 'Audit Log',
+  'Action': 'Action',
+  'All actions': 'All actions',
+  'Filter activity': 'Filter activity',
+  'Refresh': 'Refresh',
+  'No activity': 'No activity',
+  'Chmod': 'Chmod',
 }
 
 export default data

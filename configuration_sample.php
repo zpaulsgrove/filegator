@@ -215,6 +215,22 @@ return [
                 'interval_seconds' => 604800, // 7 days
             ],
         ],
+        // Admin-visible file-activity log (uploads, deletes, moves, renames,
+        // etc. across all users/folders). Records username, role, client IP,
+        // and the root-relative path of each write — i.e. PII. Each line is
+        // encrypted at rest with the dedicated key below (libsodium), so a
+        // leaked log file/backup is useless without the key — BACK THE KEY UP
+        // SEPARATELY: lose it and the history is unrecoverable. Entries older
+        // than `max_age_days` are physically purged. Leave this block
+        // unregistered to disable the feature (it then safely no-ops).
+        'Filegator\Services\Audit\AuditLog' => [
+            'handler' => '\Filegator\Services\Audit\AuditLog',
+            'config' => [
+                'log_file' => __DIR__.'/private/audit_log.jsonl',
+                'key_path' => __DIR__.'/private/audit_encryption.key', // 0600, auto-generated
+                'max_age_days' => 30, // entries older than this are purged on write
+            ],
+        ],
         'Filegator\Services\Router\Router' => [
             'handler' => '\Filegator\Services\Router\Router',
             'config' => [

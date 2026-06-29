@@ -17,15 +17,13 @@
             "backend/Services/Audit"
         ],
         "excludes": [
-            // Files with no unit coverage. Paths are relative to the source
-            // directories above (Infection resolves excludes within each source
-            // folder): LDAP/WPAuth sit under backend/Services/Auth; AuditMailer/
-            // WeeklyDigest under backend/Services/Audit (no unit tests — they
-            // would depress Covered-MSI, so keep them out until tested).
+            // Thin adapters with no unit coverage (network-bound, untestable
+            // without an LDAP/WP runtime). Paths are relative to the source
+            // directories above, so these resolve under backend/Services/Auth.
             "Adapters/LDAP.php",
-            "Adapters/WPAuth.php",
-            "AuditMailer.php",
-            "WeeklyDigest.php"
+            "Adapters/WPAuth.php"
+            // NB: AuditMailer.php and WeeklyDigest.php are now unit-tested
+            // (AuditMailerTest / WeeklyDigestTest) and have re-entered the gate.
         ]
     },
     "mutators": {

@@ -33,6 +33,12 @@ class Filesystem implements Service
         $this->storage = new Flysystem($adapter(), $config);
     }
 
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure. Returning the actual
+     *                      path lets callers (e.g. the audit log) record where
+     *                      the entry really landed after collision renaming.
+     */
     public function createDir(string $path, string $name)
     {
         $destination = $this->joinPaths($this->applyPathPrefix($path), $name);
@@ -41,9 +47,13 @@ class Filesystem implements Service
             $destination = $this->upcountName($destination);
         }
 
-        return $this->storage->createDir($destination);
+        return $this->storage->createDir($destination) ? $destination : false;
     }
 
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure.
+     */
     public function createFile(string $path, string $name)
     {
         $destination = $this->joinPaths($this->applyPathPrefix($path), $name);
@@ -52,7 +62,7 @@ class Filesystem implements Service
             $destination = $this->upcountName($destination);
         }
 
-        return $this->storage->put($destination, '');
+        return $this->storage->put($destination, '') ? $destination : false;
     }
 
     public function fileExists(string $path)
@@ -69,6 +79,10 @@ class Filesystem implements Service
         return $this->storage->getSize($path) === false;
     }
 
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure.
+     */
     public function copyFile(string $source, string $destination)
     {
         $source = $this->applyPathPrefix($source);
@@ -78,9 +92,14 @@ class Filesystem implements Service
             $destination = $this->upcountName($destination);
         }
 
-        return $this->storage->copy($source, $destination);
+        return $this->storage->copy($source, $destination) ? $destination : false;
     }
 
+    /**
+     * @return string|false the final destination directory path on success,
+     *                      false if any inner copy/createDir failed (so a
+     *                      partial copy is not mis-reported as a success).
+     */
     public function copyDir(string $source, string $destination)
     {
         $source = $this->applyPathPrefix($this->addSeparators($source));
@@ -95,27 +114,26 @@ class Filesystem implements Service
         $contents = $this->storage->listContents($source, true);
 
         if (empty($contents)) {
-            $this->storage->createDir($real_destination);
+            return $this->storage->createDir($real_destination) ? $real_destination : false;
         }
 
+        $ok = true;
         foreach ($contents as $file) {
             $source_path = $this->separator.ltrim($file['path'], $this->separator);
             $path = substr($source_path, strlen($source), strlen($source_path));
 
             if ($file['type'] == 'dir') {
-                $this->storage->createDir($this->joinPaths($real_destination, $path));
+                $ok = ($this->storage->createDir($this->joinPaths($real_destination, $path)) !== false) && $ok;
 
                 continue;
             }
 
             if ($file['type'] == 'file') {
-                $this->storage->copy($file['path'], $this->joinPaths($real_destination, $path));
+                $ok = $this->storage->copy($file['path'], $this->joinPaths($real_destination, $path)) && $ok;
             }
         }
 
-        // No per-file status is tracked above; reaching here without an
-        // exception is the success signal callers (e.g. the audit log) gate on.
-        return true;
+        return $ok ? $real_destination : false;
     }
 
     public function deleteDir(string $path)
@@ -143,7 +161,11 @@ class Filesystem implements Service
         ];
     }
 
-    public function move(string $from, string $to): bool
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure.
+     */
+    public function move(string $from, string $to)
     {
         $from = $this->applyPathPrefix($from);
         $to = $this->applyPathPrefix($to);
@@ -152,10 +174,14 @@ class Filesystem implements Service
             $to = $this->upcountName($to);
         }
 
-        return $this->storage->rename($from, $to);
+        return $this->storage->rename($from, $to) ? $to : false;
     }
 
-    public function rename(string $destination, string $from, string $to): bool
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure.
+     */
+    public function rename(string $destination, string $from, string $to)
     {
         $from = $this->joinPaths($this->applyPathPrefix($destination), $from);
         $to = $this->joinPaths($this->applyPathPrefix($destination), $to);
@@ -164,10 +190,14 @@ class Filesystem implements Service
             $to = $this->upcountName($to);
         }
 
-        return $this->storage->rename($from, $to);
+        return $this->storage->rename($from, $to) ? $to : false;
     }
 
-    public function store(string $path, string $name, $resource, bool $overwrite = false): bool
+    /**
+     * @return string|false the final (possibly upcounted) destination path on
+     *                      success, false on failure.
+     */
+    public function store(string $path, string $name, $resource, bool $overwrite = false)
     {
         $destination = $this->joinPaths($this->applyPathPrefix($path), $name);
 
@@ -179,7 +209,7 @@ class Filesystem implements Service
             }
         }
 
-        return $this->storage->putStream($destination, $resource);
+        return $this->storage->putStream($destination, $resource) ? $destination : false;
     }
     
     /**

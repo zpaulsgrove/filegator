@@ -18,10 +18,12 @@ use Filegator\Services\Service;
  * Append-only, encrypted activity log of file write-mutations across all
  * users and folders, surfaced to admins via AdminController::auditLog.
  *
- * Storage: one record per line in `log_file`. Each line is the libsodium
- * secretbox ciphertext of a single json_encode'd event object — so the file
- * is opaque at rest and a leaked copy/backup is useless without the key. The
- * plaintext shape is:
+ * Storage: one record per line in `log_file`, formatted `<unix-ts>\t<cipher>`.
+ * The cipher is the libsodium secretbox of a single json_encode'd event
+ * object — so the sensitive body (user/role/path/ip) is opaque at rest and a
+ * leaked copy/backup is useless without the key. The cleartext ts prefix lets
+ * retention pruning and time-range queries filter without decrypting every
+ * line. The plaintext event shape is:
  *
  *   {"ts":<unix>,"user":"alice","role":"user","action":"delete",
  *    "path":"/clientA/2026/return.pdf","detail":null,"ip":"203.0.113.7"}
@@ -119,18 +121,37 @@ class AuditLog implements Service
      */
     public function record(array $event): void
     {
-        if (! $this->logFile || ! $this->crypto) {
+        $this->recordMany([$event]);
+    }
+
+    /**
+     * Append one or more events under a SINGLE exclusive lock so a bulk
+     * operation (delete/copy/move 500 files) pays one open/lock/flush instead
+     * of N. Fills `ts` when missing. Never throws: any failure is logged and
+     * swallowed so a file operation that already succeeded is not turned into
+     * an error.
+     *
+     * Line format: `<unix-ts>\t<ciphertext>`. The cleartext ts prefix lets
+     * retention pruning and time-range queries filter WITHOUT decrypting every
+     * line; the event body (user/role/path/detail/ip) stays encrypted.
+     *
+     * @param array<int,array<string,mixed>> $events
+     */
+    public function recordMany(array $events): void
+    {
+        if (! $this->logFile || ! $this->crypto || empty($events)) {
             return;
         }
 
         try {
-            if (! isset($event['ts'])) {
-                $event['ts'] = time();
+            $lines = [];
+            foreach ($events as $event) {
+                if (! isset($event['ts'])) {
+                    $event['ts'] = time();
+                }
+                $json = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+                $lines[] = ((int) $event['ts'])."\t".$this->crypto->encrypt($json);
             }
-
-            // Encrypt the whole json-encoded object as one opaque line.
-            $line = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-            $cipher = $this->crypto->encrypt($line);
 
             $fh = @fopen($this->logFile, 'c+b');
             if ($fh === false) {
@@ -142,7 +163,7 @@ class AuditLog implements Service
                 flock($fh, LOCK_EX);
                 $this->maybePrune($fh);
                 fseek($fh, 0, SEEK_END);
-                fwrite($fh, $cipher."\n");
+                fwrite($fh, implode("\n", $lines)."\n");
                 fflush($fh);
             } finally {
                 flock($fh, LOCK_UN);
@@ -172,6 +193,12 @@ class AuditLog implements Service
             return [];
         }
 
+        $action = isset($filters['action']) && $filters['action'] !== '' ? (string) $filters['action'] : null;
+        $user = isset($filters['user']) && $filters['user'] !== '' ? (string) $filters['user'] : null;
+        $from = isset($filters['from']) && $filters['from'] !== '' ? (int) $filters['from'] : null;
+        $to = isset($filters['to']) && $filters['to'] !== '' ? (int) $filters['to'] : null;
+        $cutoff = time() - ($this->maxAgeDays * 86400);
+
         $events = [];
         $fh = @fopen($this->logFile, 'rb');
         if ($fh === false) {
@@ -185,60 +212,44 @@ class AuditLog implements Service
                 if ($raw === '') {
                     continue;
                 }
-                $plain = $this->crypto->decrypt($raw);
+                $tab = strpos($raw, "\t");
+                if ($tab === false) {
+                    continue; // not our format (legacy/corrupt)
+                }
+                $ts = (int) substr($raw, 0, $tab);
+
+                // Cheap ts pre-filter against the cleartext prefix: skip
+                // retention-expired and out-of-range lines WITHOUT decrypting.
+                if ($ts < $cutoff || ($from !== null && $ts < $from) || ($to !== null && $ts > $to)) {
+                    continue;
+                }
+
+                $plain = $this->crypto->decrypt(substr($raw, $tab + 1));
                 if ($plain === null) {
                     continue;
                 }
                 $evt = json_decode($plain, true);
-                if (is_array($evt)) {
-                    $events[] = $evt;
+                if (! is_array($evt)) {
+                    continue;
                 }
+                if ($action !== null && ($evt['action'] ?? null) !== $action) {
+                    continue;
+                }
+                if ($user !== null && ($evt['user'] ?? null) !== $user) {
+                    continue;
+                }
+                $events[] = $evt;
             }
         } finally {
             flock($fh, LOCK_UN);
             fclose($fh);
         }
 
-        $events = $this->applyFilters($events, $filters);
-
         usort($events, function ($a, $b) {
             return ((int) ($b['ts'] ?? 0)) <=> ((int) ($a['ts'] ?? 0));
         });
 
         return $events;
-    }
-
-    /**
-     * @param array<int,array<string,mixed>> $events
-     * @return array<int,array<string,mixed>>
-     */
-    protected function applyFilters(array $events, array $filters): array
-    {
-        $action = isset($filters['action']) && $filters['action'] !== '' ? (string) $filters['action'] : null;
-        $user = isset($filters['user']) && $filters['user'] !== '' ? (string) $filters['user'] : null;
-        $from = isset($filters['from']) && $filters['from'] !== '' ? (int) $filters['from'] : null;
-        $to = isset($filters['to']) && $filters['to'] !== '' ? (int) $filters['to'] : null;
-        $cutoff = time() - ($this->maxAgeDays * 86400);
-
-        return array_values(array_filter($events, function ($e) use ($action, $user, $from, $to, $cutoff) {
-            $ts = (int) ($e['ts'] ?? 0);
-            if ($ts < $cutoff) {
-                return false;
-            }
-            if ($action !== null && ($e['action'] ?? null) !== $action) {
-                return false;
-            }
-            if ($user !== null && ($e['user'] ?? null) !== $user) {
-                return false;
-            }
-            if ($from !== null && $ts < $from) {
-                return false;
-            }
-            if ($to !== null && $ts > $to) {
-                return false;
-            }
-            return true;
-        }));
     }
 
     /**
@@ -263,27 +274,25 @@ class AuditLog implements Service
         rewind($fh);
         $kept = [];
         while (($raw = fgets($fh)) !== false) {
-            $raw = rtrim($raw, "\r\n");
-            if ($raw === '') {
+            $line = rtrim($raw, "\r\n");
+            if ($line === '') {
                 continue;
             }
-            $plain = $this->crypto->decrypt($raw);
-            if ($plain === null) {
-                continue; // drop corrupt/undecryptable lines
+            $tab = strpos($line, "\t");
+            if ($tab === false) {
+                continue; // drop malformed/legacy lines
             }
-            $evt = json_decode($plain, true);
-            if (! is_array($evt)) {
-                continue;
-            }
-            if ((int) ($evt['ts'] ?? 0) >= $cutoff) {
-                $kept[] = $raw;
+            // Retention uses the cleartext ts prefix — no decrypt, so the
+            // once/day sweep does not pay crypto while holding the write lock.
+            if (((int) substr($line, 0, $tab)) >= $cutoff) {
+                $kept[] = $line;
             }
         }
 
         ftruncate($fh, 0);
         rewind($fh);
-        foreach ($kept as $line) {
-            fwrite($fh, $line."\n");
+        if (! empty($kept)) {
+            fwrite($fh, implode("\n", $kept)."\n");
         }
         fflush($fh);
 

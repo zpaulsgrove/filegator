@@ -15,60 +15,105 @@ use Filegator\Services\Audit\AuditLog;
 use Filegator\Utils\Homedirs;
 
 /**
- * One-line audit recording for the file-mutation controllers, factoring out
- * the identity + path capture that would otherwise be copied across ~10 call
+ * Audit recording for the file-mutation controllers, factoring out the
+ * identity + path capture that would otherwise be copied across ~10 call
  * sites (and drift). Mirrors the shared-concern pattern of
- * [ResolvesActiveHomedir].
+ * [ResolvesActiveHomedir], whose $resolvedActiveHomedir this relies on to
+ * turn a homedir-relative path into a root-relative one — so two clients'
+ * "/return.pdf" stay distinguishable in the global trail.
  *
- * Applied to a controller that has $this->auth (AuthInterface) and
- * $this->storage (Filesystem). It relies on ensureActiveHomedir() having
- * already run — that sets the storage path prefix to the user's active
- * homedir, so getPathPrefix() gives us the prefix needed to turn a
- * homedir-relative path into a root-relative one. Without that prefix two
- * different clients' "/return.pdf" would be indistinguishable in the global
- * audit view.
+ * Two path flavours:
+ *  - recordAudit*()        — caller passes a HOMEDIR-RELATIVE path (delete,
+ *                            chmod, and "from" sources); prefixed here.
+ *  - recordAuditAbsolute() — caller passes the ACTUAL post-rename path the
+ *                            Filesystem returned (create/copy/move/rename/
+ *                            upload/save); already root-relative, just
+ *                            normalised. This is what keeps the trail honest
+ *                            when a collision upcounts "x.pdf" -> "x (1).pdf".
  *
  * Never throws: identity/path resolution and the record() call are wrapped so
  * an audit failure can't turn a successful file operation into a 500.
  */
 trait RecordsAuditEvents
 {
+    /** Record one event whose path is homedir-relative. */
+    protected function recordAudit(Request $request, AuditLog $audit, string $action, string $userPath, $detail = null): void
+    {
+        $this->emitAudit($request, $audit, [[
+            'action' => $action,
+            'path' => $this->auditGlobalPath($userPath),
+            'detail' => $detail,
+        ]]);
+    }
+
+    /** Record one event whose path is already root-relative (as returned by Filesystem). */
+    protected function recordAuditAbsolute(Request $request, AuditLog $audit, string $action, string $absolutePath, $detail = null): void
+    {
+        $this->emitAudit($request, $audit, [[
+            'action' => $action,
+            'path' => $this->auditNormalize($absolutePath),
+            'detail' => $detail,
+        ]]);
+    }
+
     /**
-     * Record one mutation. $path is the homedir-relative path the controller
-     * worked with (as received from the request); it is rewritten to a
-     * root-relative path for the global trail. $detail carries extra context
-     * (e.g. "from <old>" for move/rename, the octal mode for chmod).
+     * Record many events in ONE locked append — used by bulk operations
+     * (copy/move/delete/chmod) so an N-item request does not pay N separate
+     * open/lock/flush cycles. Each item: ['action'=>, 'path'=> (already final,
+     * root-relative), 'detail'=>].
+     *
+     * @param array<int,array<string,mixed>> $items
      */
-    protected function recordAudit(Request $request, AuditLog $audit, string $action, string $path, $detail = null): void
+    protected function recordAuditBatch(Request $request, AuditLog $audit, array $items): void
+    {
+        if (empty($items)) {
+            return;
+        }
+        $this->emitAudit($request, $audit, $items);
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $items each ['action','path','detail'?]
+     */
+    private function emitAudit(Request $request, AuditLog $audit, array $items): void
     {
         try {
-            // auth->user() is null for guests; getGuest() yields the
-            // anonymous identity so guest-write deploys still record a row.
-            $effective = $this->auth->user() ?: $this->auth->getGuest();
+            $u = $this->auth->user() ?: $this->auth->getGuest();
+            $user = $u ? $u->getUsername() : 'guest';
+            $role = $u ? $u->getRole() : 'guest';
+            $ip = $request->getClientIp();
 
-            $audit->record([
-                'user' => $effective ? $effective->getUsername() : 'guest',
-                'role' => $effective ? $effective->getRole() : 'guest',
-                'action' => $action,
-                'path' => $this->auditGlobalPath($path),
-                'detail' => $detail !== null ? (string) $detail : null,
-                'ip' => $request->getClientIp(),
-            ]);
+            $events = [];
+            foreach ($items as $it) {
+                $events[] = [
+                    'user' => $user,
+                    'role' => $role,
+                    'action' => $it['action'],
+                    'path' => $it['path'],
+                    'detail' => isset($it['detail']) && $it['detail'] !== null ? (string) $it['detail'] : null,
+                    'ip' => $ip,
+                ];
+            }
+            $audit->recordMany($events);
         } catch (\Throwable $ignored) {
             // Auditing is best-effort; swallow so the file op result stands.
         }
     }
 
-    /**
-     * Turn a homedir-relative path into a root-relative one by prefixing the
-     * active homedir (the current storage path prefix) and normalising away
-     * duplicate/leading/trailing separators.
-     */
+    /** Prefix a homedir-relative path with the resolved active homedir, then normalise. */
     protected function auditGlobalPath(string $userPath): string
     {
         $sep = $this->storage->getSeparator();
-        $joined = $this->storage->getPathPrefix().$sep.$userPath;
+        $homedir = isset($this->resolvedActiveHomedir) ? (string) $this->resolvedActiveHomedir : '';
 
-        return $sep.Homedirs::normalizePath($joined, $sep);
+        return $this->auditNormalize($homedir.$sep.$userPath);
+    }
+
+    /** Canonical leading-separator display form, collapsing duplicate separators. */
+    protected function auditNormalize(string $path): string
+    {
+        $sep = $this->storage->getSeparator();
+
+        return $sep.Homedirs::normalizePath($path, $sep);
     }
 }

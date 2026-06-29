@@ -139,14 +139,13 @@ class UploadController
                 $this->tmpfs->remove($expired_chunk['name']);
             }
 
-            if ($res) {
-                $sep = $this->storage->getSeparator();
-                $stored_path = rtrim((string) $destination, $sep).$sep.$final['filename'];
+            if ($res !== false) {
+                // $res is the actual stored path (post collision-rename).
                 $detail = $overwrite_on_upload ? 'overwritten' : null;
-                $this->recordAudit($request, $audit, AuditLog::ACTION_UPLOAD, $stored_path, $detail);
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_UPLOAD, $res, $detail);
             }
 
-            return $res ? $response->json('Stored') : $response->json('Error storing file');
+            return $res !== false ? $response->json('Stored') : $response->json('Error storing file');
         }
 
         return $response->json('Uploaded');

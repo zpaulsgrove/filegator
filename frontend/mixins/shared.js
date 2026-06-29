@@ -172,6 +172,7 @@ const funcs = {
       return !_.isEmpty(exts) && (new RegExp('(' + exts.join('|').replace(/\./g, '\\.') + ')$', 'i')).test(name)
     },
     capitalize(string) {
+      if (! string) return ''
       return string.charAt(0).toUpperCase() + string.slice(1)
     },
   }

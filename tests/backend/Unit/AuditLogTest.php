@@ -88,6 +88,34 @@ class AuditLogTest extends TestCase
         $this->assertCount(1, $this->rawLines());
     }
 
+    public function testRecordManyAppendsAllEventsInOneFile()
+    {
+        $audit = $this->makeAudit();
+        $audit->recordMany([
+            $this->event(['action' => AuditLog::ACTION_DELETE, 'path' => '/a']),
+            $this->event(['action' => AuditLog::ACTION_DELETE, 'path' => '/b']),
+            $this->event(['action' => AuditLog::ACTION_DELETE, 'path' => '/c']),
+        ]);
+
+        $this->assertCount(3, $this->rawLines());
+        $paths = array_column($audit->query(), 'path');
+        sort($paths);
+        $this->assertSame(['/a', '/b', '/c'], $paths);
+    }
+
+    public function testLineHasCleartextTsPrefixButEncryptedBody()
+    {
+        $audit = $this->makeAudit();
+        $audit->record($this->event(['ts' => 1700000000, 'path' => '/sekret/clientZ.pdf', 'user' => 'topsecretuser']));
+
+        $raw = trim(file_get_contents($this->logFile));
+        // Cleartext unix-ts prefix + TAB (so prune/query filter without decrypt)...
+        $this->assertStringStartsWith("1700000000\t", $raw);
+        // ...but the sensitive body stays encrypted.
+        $this->assertStringNotContainsString('clientZ', $raw);
+        $this->assertStringNotContainsString('topsecretuser', $raw);
+    }
+
     public function testRecordFillsTimestampWhenMissing()
     {
         $audit = $this->makeAudit();

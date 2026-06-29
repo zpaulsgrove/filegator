@@ -195,6 +195,37 @@ class FilesTest extends TestCase
         $this->assertSame('/john/john.txt', $events[0]['path']);
     }
 
+    public function testAuditRecordsActualUpcountedPathOnCollision()
+    {
+        $logFile = TEST_TMP_PATH.'audit_log.jsonl';
+        $keyPath = TEST_TMP_PATH.'audit_encryption.key';
+        @unlink($logFile);
+        @unlink($logFile.'.pruned');
+
+        $username = 'john@example.com';
+        $this->signIn($username, 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+
+        // Create the same name twice; the second collides and the storage
+        // layer upcounts it to 'dup (1).txt'. The audit must record the ACTUAL
+        // stored name, not the requested one.
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'dup.txt']);
+        $this->assertOk();
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'dup.txt']);
+        $this->assertOk();
+
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init(['log_file' => $logFile, 'key_path' => $keyPath, 'max_age_days' => 30]);
+
+        $paths = array_column($audit->query(['action' => 'create']), 'path');
+        $this->assertContains('/john/dup.txt', $paths);
+        $this->assertContains('/john/dup (1).txt', $paths);
+    }
+
     public function testDownloadFileHeaders()
     {
         $username = 'john@example.com';

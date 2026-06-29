@@ -91,13 +91,15 @@ class FileController
         $path = $this->session->get(self::SESSION_CWD, $this->separator);
 
         if ($type == 'dir') {
-            if ($this->storage->createDir($path, $name)) {
-                $this->recordAudit($request, $audit, AuditLog::ACTION_CREATE, $path.$this->separator.$name, 'folder');
+            $dest = $this->storage->createDir($path, $name);
+            if ($dest !== false) {
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_CREATE, $dest, 'folder');
             }
         }
         if ($type == 'file') {
-            if ($this->storage->createFile($path, $name)) {
-                $this->recordAudit($request, $audit, AuditLog::ACTION_CREATE, $path.$this->separator.$name);
+            $dest = $this->storage->createFile($path, $name);
+            if ($dest !== false) {
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_CREATE, $dest);
             }
         }
 
@@ -111,16 +113,21 @@ class FileController
         $items = $request->input('items', []);
         $destination = $request->input('destination', $this->separator);
 
+        $events = [];
         foreach ($items as $item) {
-            $copied = $item->type == 'dir'
+            $dest = $item->type == 'dir'
                 ? $this->storage->copyDir($item->path, $destination)
                 : $this->storage->copyFile($item->path, $destination);
 
-            if ($copied) {
-                $dest = rtrim($destination, $this->separator).$this->separator.basename($item->path);
-                $this->recordAudit($request, $audit, AuditLog::ACTION_COPY, $dest, 'from '.$this->auditGlobalPath($item->path));
+            if ($dest !== false) {
+                $events[] = [
+                    'action' => AuditLog::ACTION_COPY,
+                    'path' => $this->auditNormalize($dest),
+                    'detail' => 'from '.$this->auditGlobalPath($item->path),
+                ];
             }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
@@ -132,14 +139,21 @@ class FileController
         $items = $request->input('items', []);
         $destination = $request->input('destination', $this->separator);
 
+        $events = [];
         foreach ($items as $item) {
             $full_destination = trim($destination, $this->separator)
                     .$this->separator
                     .ltrim($item->name, $this->separator);
-            if ($this->storage->move($item->path, $full_destination)) {
-                $this->recordAudit($request, $audit, AuditLog::ACTION_MOVE, $full_destination, 'from '.$this->auditGlobalPath($item->path));
+            $dest = $this->storage->move($item->path, $full_destination);
+            if ($dest !== false) {
+                $events[] = [
+                    'action' => AuditLog::ACTION_MOVE,
+                    'path' => $this->auditNormalize($dest),
+                    'detail' => 'from '.$this->auditGlobalPath($item->path),
+                ];
             }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
@@ -195,11 +209,17 @@ class FileController
         /** @var null|'all'|'folders'|'files' */
         $recursive = $request->input('recursive', null);
 
+        $events = [];
         foreach ($items as $item) {
             if ($this->storage->chmod($item->path, $permissions, $recursive)) {
-                $this->recordAudit($request, $audit, AuditLog::ACTION_CHMOD, $item->path, 'mode '.$permissions);
+                $events[] = [
+                    'action' => AuditLog::ACTION_CHMOD,
+                    'path' => $this->auditGlobalPath($item->path),
+                    'detail' => 'mode '.$permissions,
+                ];
             }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
@@ -212,10 +232,10 @@ class FileController
         $from = $request->input('from');
         $to = $request->input('to');
 
-        if ($this->storage->rename($destination, $from, $to)) {
-            $dest = rtrim($destination, $this->separator).$this->separator.$to;
+        $dest = $this->storage->rename($destination, $from, $to);
+        if ($dest !== false) {
             $fromPath = rtrim($destination, $this->separator).$this->separator.$from;
-            $this->recordAudit($request, $audit, AuditLog::ACTION_RENAME, $dest, 'from '.$this->auditGlobalPath($fromPath));
+            $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_RENAME, $dest, 'from '.$this->auditGlobalPath($fromPath));
         }
 
         return $response->json('Done');
@@ -227,18 +247,20 @@ class FileController
 
         $items = $request->input('items', []);
 
+        $events = [];
         foreach ($items as $item) {
             if ($item->type == 'dir') {
                 if ($this->storage->deleteDir($item->path)) {
-                    $this->recordAudit($request, $audit, AuditLog::ACTION_DELETE, $item->path, 'folder');
+                    $events[] = ['action' => AuditLog::ACTION_DELETE, 'path' => $this->auditGlobalPath($item->path), 'detail' => 'folder'];
                 }
             }
             if ($item->type == 'file') {
                 if ($this->storage->deleteFile($item->path)) {
-                    $this->recordAudit($request, $audit, AuditLog::ACTION_DELETE, $item->path);
+                    $events[] = ['action' => AuditLog::ACTION_DELETE, 'path' => $this->auditGlobalPath($item->path), 'detail' => null];
                 }
             }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
@@ -256,15 +278,18 @@ class FileController
         fwrite($stream, $content);
         rewind($stream);
 
-        $this->storage->deleteFile($path.$this->separator.$name);
-        $stored = $this->storage->store($path, $name, $stream);
+        // Overwrite in place (store() handles the delete) rather than an
+        // unconditional delete-then-store: a failed write can no longer leave
+        // the file destroyed with nothing recorded, and the audited path is
+        // the actual stored path.
+        $stored = $this->storage->store($path, $name, $stream, true);
 
         if (is_resource($stream)) {
             fclose($stream);
         }
 
-        if ($stored) {
-            $this->recordAudit($request, $audit, AuditLog::ACTION_SAVE, $path.$this->separator.$name);
+        if ($stored !== false) {
+            $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_SAVE, $stored);
         }
 
         return $response->json('Done');

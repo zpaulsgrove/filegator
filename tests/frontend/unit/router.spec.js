@@ -17,6 +17,8 @@ jest.mock('@/mixins/postLogin', () => ({
 // inside node_modules). The guards never touch the component definitions.
 jest.mock('@/views/Browser.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Users.vue', () => ({ __esModule: true, default: {} }))
+jest.mock('@/views/FolderAccess.vue', () => ({ __esModule: true, default: {} }))
+jest.mock('@/views/Audit.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Login.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Security.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/ForgotPassword.vue', () => ({ __esModule: true, default: {} }))
@@ -54,6 +56,34 @@ describe('router access guards', () => {
 
     it('guest is bounced to "/"', () => {
       expect(runGuard('users', 'guest')).toHaveBeenCalledWith('/')
+    })
+  })
+
+  describe('/audit-log (admin only)', () => {
+    it('admin is allowed straight through', () => {
+      expect(runGuard('audit-log', 'admin')).toHaveBeenCalledWith()
+    })
+
+    it('non-admin user is bounced to "/"', () => {
+      expect(runGuard('audit-log', 'user')).toHaveBeenCalledWith('/')
+    })
+
+    it('guest is bounced to "/"', () => {
+      expect(runGuard('audit-log', 'guest')).toHaveBeenCalledWith('/')
+    })
+  })
+
+  describe('/folder-access (admin only)', () => {
+    it('admin is allowed straight through', () => {
+      expect(runGuard('folder-access', 'admin')).toHaveBeenCalledWith()
+    })
+
+    it('non-admin user is bounced to "/"', () => {
+      expect(runGuard('folder-access', 'user')).toHaveBeenCalledWith('/')
+    })
+
+    it('guest is bounced to "/"', () => {
+      expect(runGuard('folder-access', 'guest')).toHaveBeenCalledWith('/')
     })
   })
 

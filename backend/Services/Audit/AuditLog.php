@@ -147,7 +147,7 @@ class AuditLog implements Service
             $lines = [];
             foreach ($events as $event) {
                 if (! isset($event['ts'])) {
-                    $event['ts'] = time();
+                    $event['ts'] = $this->now();
                 }
                 $json = json_encode($event, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
                 $lines[] = ((int) $event['ts'])."\t".$this->crypto->encrypt($json);
@@ -197,7 +197,7 @@ class AuditLog implements Service
         $user = isset($filters['user']) && $filters['user'] !== '' ? (string) $filters['user'] : null;
         $from = isset($filters['from']) && $filters['from'] !== '' ? (int) $filters['from'] : null;
         $to = isset($filters['to']) && $filters['to'] !== '' ? (int) $filters['to'] : null;
-        $cutoff = time() - ($this->maxAgeDays * 86400);
+        $cutoff = $this->now() - ($this->maxAgeDays * 86400);
 
         $events = [];
         $fh = @fopen($this->logFile, 'rb');
@@ -263,7 +263,7 @@ class AuditLog implements Service
     protected function maybePrune($fh): void
     {
         $marker = $this->logFile.'.pruned';
-        $now = time();
+        $now = $this->now();
         $last = is_file($marker) ? (int) @file_get_contents($marker) : 0;
         if ($last !== 0 && ($now - $last) < self::PRUNE_INTERVAL_SECONDS) {
             return;
@@ -327,5 +327,14 @@ class AuditLog implements Service
         } finally {
             umask($prev);
         }
+    }
+
+    /**
+     * Current unix time. Single seam so tests can pin the clock and assert the
+     * retention/prune/query boundaries deterministically.
+     */
+    protected function now(): int
+    {
+        return time();
     }
 }

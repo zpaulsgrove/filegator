@@ -238,6 +238,41 @@ class FilesystemTest extends TestCase
         $this->assertFileDoesNotExist(TEST_REPOSITORY.'/loremfile.txt');
     }
 
+    public function testWriteMethodsReturnFinalDestinationPath()
+    {
+        // The audit log gates on (and records) these return values, so the
+        // success contract — final path string, not bool — must hold.
+        $this->assertSame('/newdir', $this->storage->createDir('/', 'newdir'));
+        $this->assertSame('/newfile.txt', $this->storage->createFile('/', 'newfile.txt'));
+
+        $this->storage->createDir('/', 'dst');
+        $this->storage->createFile('/', 'src.txt');
+        $this->assertSame('/dst/src.txt', $this->storage->copyFile('/src.txt', '/dst'));
+
+        $this->storage->createFile('/', 'mv.txt');
+        $this->assertSame('/dst/mv.txt', $this->storage->move('/mv.txt', '/dst/mv.txt'));
+
+        $this->storage->createFile('/', 'r.txt');
+        $this->assertSame('/r2.txt', $this->storage->rename('/', 'r.txt', 'r2.txt'));
+
+        $this->storage->createDir('/', 'srcdir');
+        $this->storage->createFile('/srcdir', 'inner.txt');
+        $this->assertSame('/dst/srcdir', $this->storage->copyDir('/srcdir', '/dst'));
+    }
+
+    public function testStoreReturnsActualUpcountedPathOnCollision()
+    {
+        file_put_contents(TEST_FILE, 'x');
+
+        $first = $this->storage->store('/', 'dup.txt', fopen(TEST_FILE, 'r'));
+        $second = $this->storage->store('/', 'dup.txt', fopen(TEST_FILE, 'r'));
+
+        $this->assertSame('/dup.txt', $first);
+        // The collision is resolved to a new name and that ACTUAL path is
+        // returned (what the audit log records).
+        $this->assertSame('/dup (1).txt', $second);
+    }
+
     public function testUpcountingFilenameOrDirname()
     {
         $this->assertEquals('test (1).txt', $this->invokeMethod($this->storage, 'upcountName', ['test.txt']));

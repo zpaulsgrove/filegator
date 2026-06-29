@@ -53,6 +53,25 @@ class AuditLogTest extends TestCase
         return $audit;
     }
 
+    private function makeClockAudit(int $now, int $maxAgeDays): ClockableAuditLog
+    {
+        $audit = new ClockableAuditLog($this->logger);
+        $audit->fakeNow = $now;
+        $audit->init([
+            'log_file' => $this->logFile,
+            'key_path' => $this->keyPath,
+            'max_age_days' => $maxAgeDays,
+        ]);
+
+        return $audit;
+    }
+
+    /** Seed the once/day prune marker file directly. */
+    private function writeMarker(int $ts): void
+    {
+        file_put_contents($this->logFile.'.pruned', (string) $ts);
+    }
+
     /** @return string[] non-empty raw lines on disk */
     protected function rawLines(): array
     {
@@ -194,6 +213,124 @@ class AuditLogTest extends TestCase
         $this->assertSame(['/mid'], $paths);
     }
 
+    public function testQueryDateRangeBoundsAreInclusive()
+    {
+        $audit = $this->makeAudit();
+        $now = time();
+        $audit->record($this->event(['ts' => $now - 100, 'path' => '/from-edge']));
+        $audit->record($this->event(['ts' => $now - 50, 'path' => '/to-edge']));
+
+        // from == ts and to == ts must both be included (inclusive contract).
+        $paths = array_column($audit->query(['from' => $now - 100, 'to' => $now - 50]), 'path');
+        sort($paths);
+        $this->assertSame(['/from-edge', '/to-edge'], $paths);
+
+        // Only-from / only-to pin the null-guard branches.
+        $this->assertSame(['/to-edge', '/from-edge'], array_column($audit->query(['from' => $now - 100]), 'path'));
+        $this->assertSame(['/from-edge'], array_column($audit->query(['to' => $now - 100]), 'path'));
+    }
+
+    public function testQueryRetentionCutoffIsInclusiveAtTheEdge()
+    {
+        // Pin the clock so "exactly at the cutoff second" is deterministic.
+        $now = 2_000_000_000;
+        $audit = $this->makeClockAudit($now, 30);
+        $cutoff = $now - (30 * 86400);
+
+        // Seed a fresh prune marker so record() does NOT prune — we want all
+        // three lines on disk to test the query-side cutoff in isolation.
+        $this->writeMarker($now);
+        $audit->record($this->event(['ts' => $cutoff - 1, 'path' => '/expired']));
+        $audit->record($this->event(['ts' => $cutoff, 'path' => '/edge']));
+        $audit->record($this->event(['ts' => $cutoff + 1, 'path' => '/fresh']));
+
+        $paths = array_column($audit->query(), 'path');
+        sort($paths);
+        // `$ts < $cutoff` drops only /expired; the entry exactly at the cutoff
+        // is retained (kills the `<` -> `<=` boundary mutant).
+        $this->assertSame(['/edge', '/fresh'], $paths);
+    }
+
+    public function testPruneKeepsEntryExactlyAtCutoff()
+    {
+        $now = 2_000_000_000;
+        $audit = $this->makeClockAudit($now, 30);
+        $cutoff = $now - (30 * 86400);
+
+        // Seed two old-ish lines with prune disabled (fresh marker).
+        $this->writeMarker($now);
+        $audit->record($this->event(['ts' => $cutoff - 1, 'path' => '/expired']));
+        $audit->record($this->event(['ts' => $cutoff, 'path' => '/edge']));
+
+        // Now force a prune on the next write and confirm the edge survives.
+        @unlink($this->logFile.'.pruned');
+        $audit->record($this->event(['ts' => $now, 'path' => '/fresh']));
+
+        $this->assertCount(2, $this->rawLines(), '/expired pruned, /edge + /fresh kept');
+        $paths = array_column($audit->query(), 'path');
+        sort($paths);
+        // `>= $cutoff` keeps the exact-edge entry (kills `>=` -> `>`).
+        $this->assertSame(['/edge', '/fresh'], $paths);
+    }
+
+    public function testPruneOncePerDayGateBoundary()
+    {
+        $now = 2_000_000_000;
+        $cutoff = $now - (30 * 86400);
+
+        // Case A: marker exactly PRUNE_INTERVAL old -> ($now-$last) == 86400,
+        // which is NOT < 86400, so the prune RUNS and drops the expired line.
+        $auditA = $this->makeClockAudit($now, 30);
+        $this->writeMarker($now); // disable prune while seeding
+        $auditA->record($this->event(['ts' => $cutoff - 100, 'path' => '/old']));
+        $auditA->record($this->event(['ts' => $now, 'path' => '/keep']));
+        $this->writeMarker($now - 86400);
+        $auditA->record($this->event(['ts' => $now, 'path' => '/trigger']));
+        $this->assertCount(2, $this->rawLines(), 'gate open at exactly the interval: prune ran, /old dropped');
+
+        // Case B: marker one second inside the interval -> 86399 < 86400, prune SKIPS.
+        $this->resetTempDir();
+        @unlink($this->logFile);
+        @unlink($this->logFile.'.pruned');
+        $auditB = $this->makeClockAudit($now, 30);
+        $this->writeMarker($now);
+        $auditB->record($this->event(['ts' => $cutoff - 100, 'path' => '/old']));
+        $auditB->record($this->event(['ts' => $now, 'path' => '/keep']));
+        $this->writeMarker($now - 86400 + 1);
+        $auditB->record($this->event(['ts' => $now, 'path' => '/trigger']));
+        $this->assertCount(3, $this->rawLines(), 'gate closed one second early: prune skipped, /old retained');
+    }
+
+    public function testPruneOfAllExpiredLeavesNoLeadingBlankLine()
+    {
+        $now = 2_000_000_000;
+        $audit = $this->makeClockAudit($now, 30);
+        $cutoff = $now - (30 * 86400);
+
+        $this->writeMarker($now);
+        $audit->record($this->event(['ts' => $cutoff - 100, 'path' => '/a']));
+        $audit->record($this->event(['ts' => $cutoff - 50, 'path' => '/b']));
+
+        // Force a prune where EVERY existing line is expired (kept === []).
+        @unlink($this->logFile.'.pruned');
+        $audit->record($this->event(['ts' => $now, 'path' => '/fresh']));
+
+        $raw = file_get_contents($this->logFile);
+        // The `! empty($kept)` guard prevents writing a lone "\n" that would
+        // leave a spurious blank first line.
+        $this->assertStringStartsNotWith("\n", $raw);
+        $this->assertCount(1, $this->rawLines());
+        $this->assertSame(['/fresh'], array_column($audit->query(), 'path'));
+    }
+
+    public function testRecordManyWithNoEventsIsANoOp()
+    {
+        $audit = $this->makeAudit();
+        $audit->recordMany([]);
+        $this->assertSame([], $this->rawLines());
+        $this->assertSame([], $audit->query());
+    }
+
     public function testQuerySortsNewestFirst()
     {
         $audit = $this->makeAudit();
@@ -305,5 +442,22 @@ class CapturingLogger implements LoggerInterface
     public function log(string $message, int $level = self::INFO)
     {
         $this->messages[] = $message;
+    }
+}
+
+/**
+ * AuditLog with a pinnable clock so retention/prune/query boundaries are
+ * deterministic in tests.
+ *
+ * @internal
+ */
+class ClockableAuditLog extends AuditLog
+{
+    /** @var int */
+    public $fakeNow = 0;
+
+    protected function now(): int
+    {
+        return $this->fakeNow;
     }
 }

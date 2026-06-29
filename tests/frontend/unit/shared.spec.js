@@ -62,6 +62,13 @@ describe('shared mixin helpers', () => {
       expect(m.capitalize('hello')).toBe('Hello')
       expect(m.capitalize('World')).toBe('World')
     })
+    it('returns empty string for empty/null/undefined without throwing', () => {
+      // Audit rows render capitalize(role)/capitalize(action); a partial log
+      // line with a missing field must not crash the whole table.
+      expect(m.capitalize('')).toBe('')
+      expect(m.capitalize(null)).toBe('')
+      expect(m.capitalize(undefined)).toBe('')
+    })
   })
 
   describe('is / can (role & permission gates)', () => {

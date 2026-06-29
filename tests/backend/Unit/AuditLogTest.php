@@ -181,6 +181,19 @@ class AuditLogTest extends TestCase
         $this->assertCount(1, $audit->query(['user' => 'alice', 'action' => AuditLog::ACTION_UPLOAD]));
     }
 
+    public function testQueryFiltersByDateRange()
+    {
+        $audit = $this->makeAudit();
+        $now = time();
+        $audit->record($this->event(['ts' => $now - 100, 'path' => '/old']));
+        $audit->record($this->event(['ts' => $now - 50, 'path' => '/mid']));
+        $audit->record($this->event(['ts' => $now, 'path' => '/new']));
+
+        // Inclusive bounds; the ts pre-filter (no decrypt) selects /mid only.
+        $paths = array_column($audit->query(['from' => $now - 60, 'to' => $now - 10]), 'path');
+        $this->assertSame(['/mid'], $paths);
+    }
+
     public function testQuerySortsNewestFirst()
     {
         $audit = $this->makeAudit();

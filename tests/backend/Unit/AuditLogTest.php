@@ -34,7 +34,10 @@ class AuditLogTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->resetTempDir();
+        // Don't resetTempDir() — that wipes the shared tmp tree (incl. fixtures
+        // other suites rely on, e.g. sample.txt) and caused cross-suite
+        // pollution under the single-process mutation run. This unit test only
+        // needs its OWN files cleared; parent::setUp() ensures TEST_TMP_PATH.
         $this->logFile = TEST_TMP_PATH.'audit_test.jsonl';
         $this->keyPath = TEST_TMP_PATH.'audit_test.key';
         foreach ([$this->logFile, $this->logFile.'.pruned', $this->keyPath] as $f) {
@@ -290,7 +293,8 @@ class AuditLogTest extends TestCase
         $this->assertCount(2, $this->rawLines(), 'gate open at exactly the interval: prune ran, /old dropped');
 
         // Case B: marker one second inside the interval -> 86399 < 86400, prune SKIPS.
-        $this->resetTempDir();
+        // Clear only this test's audit files (NOT resetTempDir, which would wipe
+        // the shared tmp dir and pollute other suites under single-process runs).
         @unlink($this->logFile);
         @unlink($this->logFile.'.pruned');
         $auditB = $this->makeClockAudit($now, 30);
@@ -477,7 +481,6 @@ class AuditLogTest extends TestCase
         $this->assertSame(['/in45'], array_column($audit45->query(), 'path'), '40d is within a parsed 45d window');
 
         // A non-positive value fails the `> 0` guard and keeps the 30-day default.
-        $this->resetTempDir();
         @unlink($this->logFile);
         @unlink($this->logFile.'.pruned');
         $audit0 = new ClockableAuditLog($this->logger);

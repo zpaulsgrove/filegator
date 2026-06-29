@@ -29,7 +29,8 @@ class RecordsAuditEventsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->resetTempDir();
+        // Clear only this test's own files; do NOT resetTempDir() (it wipes the
+        // shared tmp tree and pollutes other suites under single-process runs).
         @unlink(TEST_TMP_PATH.'ra.jsonl');
         @unlink(TEST_TMP_PATH.'ra.jsonl.pruned');
         @unlink(TEST_TMP_PATH.'ra.key');

@@ -154,6 +154,15 @@ class AuthController
             return $response->json('Not Allowed', 429);
         }
 
+        // Resolve the user BEFORE consuming the second factor. verifyTotp()
+        // plants a single-use replay marker and consumeBackupCode() permanently
+        // removes a backup code; if the lookup failed afterwards (a TOCTOU
+        // delete/rename) the credential was burned for a login that still fails.
+        $user = $auth->find($username);
+        if (! $user) {
+            return $response->json('User not found', 422);
+        }
+
         $code = (string) $request->input('code', '');
         $useBackup = (bool) $request->input('use_backup', false);
 
@@ -165,11 +174,6 @@ class AuthController
             $lockout->recordFailure($ip, $username);
             $this->logger->log("MFA failed for {$username} from {$ip}");
             return $response->json('Invalid code', 422);
-        }
-
-        $user = $auth->find($username);
-        if (! $user) {
-            return $response->json('User not found', 422);
         }
 
         $lockout->clearForUsername($username);

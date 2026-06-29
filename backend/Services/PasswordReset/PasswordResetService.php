@@ -172,7 +172,16 @@ class PasswordResetService implements Service
         if (! $row) return false;
         if (! $this->store->markUsed($hash)) return false;
 
-        $this->resettable()->setPasswordDirect($row['username'], $newPassword);
+        // The token is claimed (single-use barrier intact). If the password
+        // write fails, release the claim so the user can retry rather than
+        // being forced to restart the whole forgot-password flow with a token
+        // that was burned without ever changing the password.
+        try {
+            $this->resettable()->setPasswordDirect($row['username'], $newPassword);
+        } catch (\Throwable $e) {
+            $this->store->revertUsed($hash);
+            throw $e;
+        }
 
         $this->logger->log(sprintf(
             'Password reset completed for user=%s token_prefix=%s',

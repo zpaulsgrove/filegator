@@ -107,9 +107,17 @@ class UploadController
 
         $this->tmpfs->write($prefix.$file_name.'.part'.$chunk_number, $stream);
 
-        // check if all the parts present, and create the final destination file
+        // check if all the parts present, and create the final destination file.
+        // Count ONLY real chunk parts: the glob $prefix.'*' also matches the
+        // '_error' trap and a leftover 'assembled' scratch file from a crashed
+        // assembly. Summing those could push $chunks_size past $total_size while
+        // actual parts are still missing, triggering a premature (truncated)
+        // assembly.
         $chunks_size = 0;
         foreach ($this->tmpfs->findAll($prefix.'*') as $chunk) {
+            if (strpos($chunk['name'], '.part') === false) {
+                continue;
+            }
             $chunks_size += $chunk['size'];
         }
 
@@ -136,6 +144,18 @@ class UploadController
             // rather than appended onto.
             $assembled = $prefix.'assembled';
             for ($i = 1; $i <= $total_chunks; ++$i) {
+                // Guard against a missing part: readStream() would fopen() a
+                // non-existent file and hand back a false stream, and
+                // file_put_contents($path, false) writes nothing — silently
+                // storing a truncated file. Abort and clean up instead.
+                if (! $this->tmpfs->exists($prefix.$file_name.'.part'.$i)) {
+                    foreach ($this->tmpfs->findAll($prefix.'*') as $tmp_chunk) {
+                        $this->tmpfs->remove($tmp_chunk['name']);
+                    }
+
+                    return $response->json('Missing chunk', 422);
+                }
+
                 $part = $this->tmpfs->readStream($prefix.$file_name.'.part'.$i);
                 $this->tmpfs->write($assembled, $part['stream'], $i > 1);
             }

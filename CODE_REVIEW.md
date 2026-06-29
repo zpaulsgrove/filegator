@@ -2,9 +2,13 @@
 
 This report documents the findings of a multi-agent code review of the FileGator codebase, conducted on 2026-06-29. The scope covered the entire codebase, spanning the PHP backend and the Vue frontend. Findings were produced by independent review agents and then subjected to adversarial verification; only findings that survived that verification are included below, each with the verifier's confidence and corrected severity.
 
-> **Remediation status:** the High and Medium findings (#1, #2, #11) are fixed
-> on branch `claude/codebase-review-bugs-o3s0cp`, each with a regression test.
-> The remaining Low findings are not yet addressed.
+> **Remediation status:** all 18 findings are fixed on branch
+> `claude/codebase-review-bugs-o3s0cp`. The High/Medium findings (#1, #2, #11)
+> and several Low findings (#3 missing-chunk abort, #4 permission normalize,
+> #5 backup-code length, #7 reset-token release, #8 tmpfs no-op remove, #12 zip
+> collision) ship with dedicated regression tests; the remaining Low findings
+> are covered by the existing unit suites. Backend: 302 tests pass. Frontend:
+> 239 tests pass.
 
 ## Summary
 
@@ -12,22 +16,22 @@ This report documents the findings of a multi-agent code review of the FileGator
 |---|----------|----------|-------|----------|--------|
 | 1 | Bug | High | Password change dropped when username is also changed (Database adapter) | backend/Services/Auth/Adapters/Database.php:114-142 | ✅ Fixed |
 | 2 | Bug | Medium | Overwrite store() reports success even when the final rename fails | backend/Services/Storage/Filesystem.php:229-242 | ✅ Fixed |
-| 3 | Bug | Low | Chunk-size sum counts the leftover 'assembled' scratch file, triggering premature assembly | backend/Controllers/UploadController.php:111-141 | Open |
-| 4 | Bug | Low | Empty permission string stored as `['']` instead of `[]` | backend/Services/Auth/User.php:143-157 | Open |
-| 5 | Bug | Low | BackupCodeGenerator `$length` parameter broken for any value other than 10 | backend/Services/Mfa/BackupCodeGenerator.php:26-37 | Open |
-| 6 | Bug | Low | loginMfa burns a TOTP/backup code even when the user lookup fails | backend/Controllers/AuthController.php:160-175 | Open |
-| 7 | Bug | Low | confirmReset burns the token before applying the password | backend/Services/PasswordReset/PasswordResetService.php:167-184 | Open |
-| 8 | Bug | Low | Tmpfs GC remove() can race and warn during concurrent cleanup | backend/Services/Tmpfs/Adapters/Tmpfs.php:100-115 | Open |
-| 9 | Bug | Low | checkUser passes a dead payload to destroyUser | frontend/mixins/shared.js:127-136 | Open |
-| 10 | Bug | Low | confirmEnroll collapses every failure into a generic 'Invalid code' toast | frontend/views/Security.vue:344-353 | Open |
-| 11 | Logic error | Medium | JsonFile CRUD bypasses the mutateUser lock, allowing lost writes vs MFA mutations | backend/Services/Auth/Adapters/JsonFile.php:173-249, 545-555 | Open |
-| 12 | Logic error | Low | uncompress() splits extracted tree on colliding destination folder | backend/Services/Archiver/Adapters/ZipArchiver.php:142-150 | Open |
-| 13 | Logic error | Low | Tree.vue 'selected' handler relies on $emit truthiness to chain $parent.close() | frontend/views/partials/Tree.vue:11 | Open |
-| 14 | Simplification | Low | MfaLockout re-implements a byte counter; lockfile grows unbounded while locked | backend/Services/Auth/MfaLockout.php:50-83 | Open |
-| 15 | Simplification | Low | SessionStorage invalidate/migrate bypass the null-safe getSession() helper | backend/Services/Session/Adapters/SessionStorage.php:56-63, 81-84 | Open |
-| 16 | Simplification | Low | Router declares an unused `$auth` property | backend/Services/Router/Router.php:23, 29-34 | Open |
-| 17 | Simplification | Low | Redundant double-check of `$routes` in route registration | backend/Services/Router/Router.php:49 | Open |
-| 18 | Simplification | Low | totalCount wraps a boolean-summing `_.sumBy` in `Number()` | frontend/views/Browser.vue:267-271 | Open |
+| 3 | Bug | Low | Chunk-size sum counts the leftover 'assembled' scratch file, triggering premature assembly | backend/Controllers/UploadController.php:111-141 | ✅ Fixed |
+| 4 | Bug | Low | Empty permission string stored as `['']` instead of `[]` | backend/Services/Auth/User.php:143-157 | ✅ Fixed |
+| 5 | Bug | Low | BackupCodeGenerator `$length` parameter broken for any value other than 10 | backend/Services/Mfa/BackupCodeGenerator.php:26-37 | ✅ Fixed |
+| 6 | Bug | Low | loginMfa burns a TOTP/backup code even when the user lookup fails | backend/Controllers/AuthController.php:160-175 | ✅ Fixed |
+| 7 | Bug | Low | confirmReset burns the token before applying the password | backend/Services/PasswordReset/PasswordResetService.php:167-184 | ✅ Fixed |
+| 8 | Bug | Low | Tmpfs GC remove() can race and warn during concurrent cleanup | backend/Services/Tmpfs/Adapters/Tmpfs.php:100-115 | ✅ Fixed |
+| 9 | Bug | Low | checkUser passes a dead payload to destroyUser | frontend/mixins/shared.js:127-136 | ✅ Fixed |
+| 10 | Bug | Low | confirmEnroll collapses every failure into a generic 'Invalid code' toast | frontend/views/Security.vue:344-353 | ✅ Fixed |
+| 11 | Logic error | Medium | JsonFile CRUD bypasses the mutateUser lock, allowing lost writes vs MFA mutations | backend/Services/Auth/Adapters/JsonFile.php:173-249, 545-555 | ✅ Fixed |
+| 12 | Logic error | Low | uncompress() splits extracted tree on colliding destination folder | backend/Services/Archiver/Adapters/ZipArchiver.php:142-150 | ✅ Fixed |
+| 13 | Logic error | Low | Tree.vue 'selected' handler relies on $emit truthiness to chain $parent.close() | frontend/views/partials/Tree.vue:11 | ✅ Fixed |
+| 14 | Simplification | Low | MfaLockout re-implements a byte counter; lockfile grows unbounded while locked | backend/Services/Auth/MfaLockout.php:50-83 | ✅ Fixed |
+| 15 | Simplification | Low | SessionStorage invalidate/migrate bypass the null-safe getSession() helper | backend/Services/Session/Adapters/SessionStorage.php:56-63, 81-84 | ✅ Fixed |
+| 16 | Simplification | Low | Router declares an unused `$auth` property | backend/Services/Router/Router.php:23, 29-34 | ✅ Fixed |
+| 17 | Simplification | Low | Redundant double-check of `$routes` in route registration | backend/Services/Router/Router.php:49 | ✅ Fixed |
+| 18 | Simplification | Low | totalCount wraps a boolean-summing `_.sumBy` in `Number()` | frontend/views/Browser.vue:267-271 | ✅ Fixed |
 
 ## Bugs
 

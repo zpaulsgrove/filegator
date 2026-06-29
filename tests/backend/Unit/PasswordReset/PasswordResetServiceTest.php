@@ -160,6 +160,37 @@ class PasswordResetServiceTest extends TestCase
         $this->assertFalse($service->confirmReset($token, 'AnotherPass2'));
     }
 
+    public function testConfirmResetReleasesTokenWhenPasswordWriteFails()
+    {
+        // Regression: markUsed() ran before setPasswordDirect() with no rollback,
+        // so a transient write failure burned the token without changing the
+        // password, forcing the user to restart the whole flow. The claim must
+        // now be released so the same token still works on retry.
+        $this->fakeAuth->registerUser('carol@example.com', 'carol');
+        $service = $this->makeService();
+
+        $service->requestReset('carol@example.com', '1.2.3.4');
+        $token = $this->tokenFromLastEmail();
+
+        // First attempt: the auth store fails to persist the new password.
+        $this->fakeAuth->failNextPasswordWrite = true;
+        try {
+            $service->confirmReset($token, 'FirstTry123');
+            $this->fail('confirmReset should have propagated the write failure');
+        } catch (\RuntimeException $e) {
+            // expected
+        }
+        $this->assertArrayNotHasKey('carol', $this->fakeAuth->passwordChanges);
+
+        // The token must still be valid and usable on retry.
+        $this->assertIsArray($service->validateToken($token));
+        $this->assertTrue($service->confirmReset($token, 'SecondTry123'));
+        $this->assertSame('SecondTry123', $this->fakeAuth->passwordChanges['carol'] ?? null);
+
+        // ...and remains strictly single-use afterwards.
+        $this->assertFalse($service->confirmReset($token, 'ThirdTry123'));
+    }
+
     public function testConfirmResetFailsForUnknownToken()
     {
         $service = $this->makeService();

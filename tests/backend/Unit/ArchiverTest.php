@@ -196,6 +196,53 @@ class ArchiverTest extends TestCase
         $this->assertFileDoesNotExist(TEST_TMP_PATH.$name);
     }
 
+    public function testUncompressDoesNotSplitTreeWhenDestinationHasCollidingFolder()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+
+        // Build a source tree "folder/inside.txt" and archive it (the archive
+        // contains an explicit "folder" directory entry plus the file).
+        $storage->createDir('/', 'folder');
+        $stream = fopen('data://text/plain;base64,'.base64_encode('zipped'), 'r');
+        $storage->store('/folder', 'inside.txt', $stream);
+        fclose($stream);
+
+        $name = $this->archiver->createArchive($storage);
+        $this->archiver->addDirectoryFromStorage('/folder');
+        $this->archiver->closeArchive();
+
+        // Place the produced archive into storage so uncompress() can read it.
+        $archiveStream = fopen(TEST_TMP_PATH.$name, 'r');
+        $storage->store('/', 'archive.zip', $archiveStream);
+        fclose($archiveStream);
+
+        // Destination already contains a NON-EMPTY "folder" that collides with
+        // the one in the zip.
+        $storage->createDir('/', 'dest');
+        $storage->createDir('/dest', 'folder');
+        $pre = fopen('data://text/plain;base64,'.base64_encode('preexisting'), 'r');
+        $storage->store('/dest/folder', 'preexisting.txt', $pre);
+        fclose($pre);
+
+        $this->archiver->uncompress('/archive.zip', '/dest', $storage);
+
+        // Regression: the zip's directory entry was upcounted to "folder (1)"
+        // while its file still landed in the pre-existing "dest/folder",
+        // splitting the tree. The file must now follow its (upcounted) folder.
+        $this->assertTrue($storage->fileExists('/dest/folder (1)/inside.txt'),
+            'extracted file should follow its upcounted directory');
+        $this->assertFalse($storage->fileExists('/dest/folder/inside.txt'),
+            'extracted file must not merge into the pre-existing colliding folder');
+        // The pre-existing content is left untouched.
+        $this->assertTrue($storage->fileExists('/dest/folder/preexisting.txt'));
+    }
+
     public function testUncompressingArchiveFromStorage()
     {
         $storage = new Filesystem();

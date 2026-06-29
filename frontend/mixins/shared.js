@@ -128,7 +128,9 @@ const funcs = {
       api.getUser()
         .then((user) => {
           if (user.username !== store.state.user.username) {
-            this.$store.commit('destroyUser', user)
+            // destroyUser takes no payload — it resets to the guest fixture.
+            // The mismatch means the session changed underneath us; log out.
+            this.$store.commit('destroyUser')
             this.$toast.open({
               message: this.lang('Please log in'),
               type: 'is-danger',

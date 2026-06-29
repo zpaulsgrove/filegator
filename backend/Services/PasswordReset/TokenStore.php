@@ -96,6 +96,26 @@ class TokenStore
         return $hit;
     }
 
+    /**
+     * Release a claim made by markUsed(). Only the caller that just won
+     * markUsed() (and then failed to apply the password) should call this, so
+     * the token becomes usable again for a retry instead of being burned by a
+     * transient write error. Runs inside the same LOCK_EX RMW.
+     */
+    public function revertUsed(string $tokenHash): void
+    {
+        $this->withWriteLock(function (array $rows) use ($tokenHash) {
+            foreach ($rows as &$row) {
+                if (! isset($row['token_hash'])) continue;
+                if (! hash_equals((string) $row['token_hash'], $tokenHash)) continue;
+                $row['used'] = false;
+                break;
+            }
+            unset($row);
+            return $rows;
+        });
+    }
+
     public function all(): array
     {
         if (! file_exists($this->file)) return [];

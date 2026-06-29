@@ -30,6 +30,9 @@ class FakeResettableAuth implements Service, AuthInterface, PasswordResettableIn
     /** @var array<string,string> username => the password it was reset to */
     public array $passwordChanges = [];
 
+    /** When true, setPasswordDirect() throws to simulate a write failure. */
+    public bool $failNextPasswordWrite = false;
+
     public function registerUser(string $email, string $username): void
     {
         $this->usersByEmail[strtolower($email)] = $username;
@@ -51,6 +54,11 @@ class FakeResettableAuth implements Service, AuthInterface, PasswordResettableIn
 
     public function setPasswordDirect(string $username, string $newPassword): void
     {
+        if ($this->failNextPasswordWrite) {
+            $this->failNextPasswordWrite = false;
+            throw new \RuntimeException('simulated password-store write failure');
+        }
+
         $this->passwordChanges[$username] = $newPassword;
     }
 

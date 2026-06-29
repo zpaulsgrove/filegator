@@ -55,11 +55,18 @@ class SessionStorage implements Service, SessionStorageInterface
 
     public function invalidate()
     {
-        if (! $this->getSession()->isStarted()) {
-            $this->getSession()->start();
+        // Honor the nullable getSession() contract: with no bound session there
+        // is nothing to invalidate, and dereferencing the null would fatal.
+        $session = $this->getSession();
+        if (! $session) {
+            return false;
         }
 
-        $this->getSession()->invalidate();
+        if (! $session->isStarted()) {
+            $session->start();
+        }
+
+        return $session->invalidate();
     }
 
     private function setSession(Session $session)
@@ -80,6 +87,14 @@ class SessionStorage implements Service, SessionStorageInterface
 
     public function migrate($destroy = false, $lifetime = null): bool
     {
-        return $this->request->getSession()->migrate($destroy, $lifetime);
+        // Go through the null-safe helper rather than request->getSession()
+        // directly, which under Symfony 5 throws SessionNotFoundException when
+        // no session is bound — the very case the helper exists to absorb.
+        $session = $this->getSession();
+        if (! $session) {
+            return false;
+        }
+
+        return $session->migrate($destroy, $lifetime);
     }
 }

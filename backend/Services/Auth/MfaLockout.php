@@ -49,8 +49,15 @@ class MfaLockout implements Service
 
     public function recordFailure(string $ip, string $username): void
     {
-        $this->tmpfs->write($this->ipKey($ip), 'x', true);
-        $this->tmpfs->write($this->usernameKey($username), 'x', true);
+        // incrementCounterIfBelow() holds LOCK_EX across the read-modify-write
+        // (atomic vs concurrent failures) and stops appending once the cap is
+        // reached, so the lockfile no longer grows unbounded while the account
+        // is already locked. isCounterLocked() keeps using the strlen >= cap
+        // check, which still trips at exactly `lockout_attempts` bytes.
+        $attempts = (int) $this->config->get('lockout_attempts', 5);
+
+        $this->tmpfs->incrementCounterIfBelow($this->ipKey($ip), $attempts);
+        $this->tmpfs->incrementCounterIfBelow($this->usernameKey($username), $attempts);
     }
 
     /**

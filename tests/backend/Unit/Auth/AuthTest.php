@@ -231,6 +231,17 @@ abstract class AuthTest extends TestCase
         $this->auth->update('mike@example.com', $user);
     }
 
+    public function testEmptyEncodedPermissionsNormalizeToEmptyArray()
+    {
+        // Regression: explode('|', '') returns [''] (one empty string), so an
+        // empty permission set was stored as [''] instead of [].
+        $user = new User();
+        $user->setPermissions('', true);
+
+        $this->assertSame([], $user->getPermissions());
+        $this->assertSame('', $user->getPermissions(true));
+    }
+
     public function testNoGuestException()
     {
         $this->expectException(Exception::class);

@@ -347,8 +347,21 @@ export default {
           this.backupCodes = res.backup_codes
           this.refresh()
         })
-        .catch(() => {
-          this.$toast.open({ message: this.lang('Invalid code'), type: 'is-danger' })
+        .catch(err => {
+          // Only a genuine 422 means the submitted code was rejected; surface
+          // the server's specific message ('Invalid code' / field error).
+          // Everything else — 501 not supported, an expired session, a
+          // transient network or 5xx error — defers to the shared handler
+          // rather than being mislabelled 'Invalid code'.
+          if (err && err.response && err.response.status === 422) {
+            const body = err.response.data && err.response.data.data
+            const message = (body && typeof body === 'object' && typeof body.code === 'string')
+              ? body.code
+              : this.lang('Invalid code')
+            this.$toast.open({ message, type: 'is-danger' })
+            return
+          }
+          this.handleError(err)
         })
     },
     cancelEnroll() {

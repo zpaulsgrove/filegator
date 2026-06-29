@@ -38,6 +38,22 @@ class BackupCodeGeneratorTest extends TestCase
         }
     }
 
+    public function testCustomLengthSplitsEvenlyWithoutEmptyGroups()
+    {
+        // Regression: the split point was hardcoded at offset 5, so any length
+        // other than 10 produced malformed codes (empty/lopsided groups or a
+        // trailing hyphen). The split now derives from $length.
+        foreach ([[6, 3, 3], [8, 4, 4], [12, 6, 6], [14, 7, 7]] as [$length, $left, $right]) {
+            foreach (BackupCodeGenerator::generate(5, $length) as $c) {
+                $this->assertMatchesRegularExpression(
+                    '/^[A-Z2-9]{'.$left.'}-[A-Z2-9]{'.$right.'}$/',
+                    $c,
+                    "length {$length} must split into {$left}-{$right}"
+                );
+            }
+        }
+    }
+
     public function testHashedCodesVerifyWithBcrypt()
     {
         $plain = ['ABCDE-12345', 'WXYZH-98765'];

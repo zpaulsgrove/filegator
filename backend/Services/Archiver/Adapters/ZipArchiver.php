@@ -139,15 +139,54 @@ class ZipArchiver implements Service, ArchiverInterface
 
         $contents = $archive->listContents('/', true);
 
+        // Map each zip directory path to the actual directory created under
+        // $destination. createDir() upcounts a name that collides with an
+        // existing non-empty folder (e.g. "folder" -> "folder (1)"); without
+        // this map the directory entry would be upcounted while the files —
+        // computed independently from the original zip dirname — still landed
+        // in the pre-existing "folder", splitting the extracted tree.
+        $dir_map = [];
+
+        $dirs = [];
+        $files = [];
         foreach ($contents as $item) {
-            $stream = null;
             if ($item['type'] == 'dir') {
-                $storage->createDir($destination, $item['path']);
+                $dirs[] = $item;
+            } elseif ($item['type'] == 'file') {
+                $files[] = $item;
             }
-            if ($item['type'] == 'file') {
-                $stream = $archive->readStream($item['path']);
-                $storage->store($destination.'/'.$item['dirname'], $item['basename'], $stream);
+        }
+
+        // Create parents before children so each child is created under its
+        // parent's already-resolved (possibly upcounted) directory.
+        usort($dirs, function ($a, $b) {
+            return substr_count($a['path'], '/') <=> substr_count($b['path'], '/');
+        });
+
+        foreach ($dirs as $item) {
+            $parent = dirname($item['path']);
+            $parent_rel = ($parent === '.' || $parent === '') ? '' : ($dir_map[$parent] ?? $parent);
+            $target_parent = $parent_rel === '' ? $destination : $destination.'/'.$parent_rel;
+
+            $created = $storage->createDir($target_parent, basename($item['path']));
+
+            // createDir() returns the prefix-applied path; only its final
+            // segment can differ from the requested name (collision upcount).
+            if ($created !== false) {
+                $final_base = basename($created);
+                $dir_map[$item['path']] = ($parent_rel === '' ? '' : $parent_rel.'/').$final_base;
             }
+        }
+
+        foreach ($files as $item) {
+            $stream = $archive->readStream($item['path']);
+
+            $dirname = $item['dirname'];
+            $rel_dir = ($dirname === '' || $dirname === '.') ? '' : ($dir_map[$dirname] ?? $dirname);
+            $target = $rel_dir === '' ? $destination : $destination.'/'.$rel_dir;
+
+            $storage->store($target, $item['basename'], $stream);
+
             if (is_resource($stream)) {
                 fclose($stream);
             }

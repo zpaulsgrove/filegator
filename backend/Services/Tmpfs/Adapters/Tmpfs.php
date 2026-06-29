@@ -169,7 +169,7 @@ class Tmpfs implements Service, TmpfsInterface
         return $this->path;
     }
 
-    private function sanitizeFilename($filename)
+    public function sanitizeFilename(string $filename): string
     {
         $filename = (string) preg_replace(
             '~

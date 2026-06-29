@@ -1083,6 +1083,41 @@ class FilesTest extends TestCase
         $this->assertEquals(414, $headers->get('content-length'));
     }
 
+    public function testBatchArchiveCannotBeDownloadedByAnotherUser()
+    {
+        // IDOR regression: an archive created by one user must not be
+        // retrievable by a different user who supplies its id. Both john and
+        // admin hold the batchdownload permission, so the route guard passes
+        // for both — the per-session ownership binding in the controller is
+        // what must reject the cross-user download (returning 404, never the
+        // bytes).
+        $this->signIn('john@example.com', 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/secret.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/batchdownload', [
+            'items' => [
+                [
+                    'type' => 'file',
+                    'path' => '/secret.txt',
+                    'name' => 'secret.txt',
+                    'time' => $this->timestamp,
+                ],
+            ],
+        ]);
+        $this->assertOk();
+        $uniqid = json_decode($this->response->getContent())->data->uniqid;
+
+        // A different authenticated user (also holding batchdownload) tries to
+        // grab john's archive by its id.
+        $this->signIn('admin@example.com', 'admin123');
+        $this->sendRequest('GET', '/batchdownload', [
+            'uniqid' => $uniqid,
+        ]);
+        $this->assertStatus(404);
+    }
+
     public function testUpdateFileContent()
     {
         $username = 'john@example.com';

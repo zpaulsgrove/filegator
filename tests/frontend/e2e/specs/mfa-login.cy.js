@@ -46,7 +46,7 @@ describe('MFA login', () => {
     cy.get('[data-test="logout"]').should('be.visible')
   })
 
-  it('rejects a wrong code at the MFA step and grants no session', () => {
+  it('rejects a wrong code, returns to the password step, and grants no session', () => {
     cy.get('[data-test="login-username"]').type('admin')
     cy.get('[data-test="login-password"]').type('admin123')
     cy.get('[data-test="login-submit"]').click()
@@ -54,9 +54,13 @@ describe('MFA login', () => {
     cy.get('[data-test="login-mfa-code"]').should('be.visible').type('000000')
     cy.get('[data-test="login-mfa-submit"]').click()
 
+    // The MFA challenge is single-use: the backend consumes it on every
+    // attempt, so a wrong code can't be retried in place. The app returns to
+    // the password step with an explanatory error instead of stranding the
+    // user on a prompt that can never succeed (issue #76 / PR #90).
     cy.get('[data-test="login-error"]').should('be.visible')
-    // Still on the MFA step, no authenticated chrome.
-    cy.get('[data-test="login-mfa-code"]').should('be.visible')
+    cy.get('[data-test="login-password"]').should('be.visible')
+    cy.get('[data-test="login-mfa-code"]').should('not.exist')
     cy.get('[data-test="logout"]').should('not.exist')
   })
 

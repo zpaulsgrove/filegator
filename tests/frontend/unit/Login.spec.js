@@ -328,6 +328,106 @@ describe('Login.vue — MFA code validated in JS (no native required)', () => {
 
 })
 
+describe('Login.vue — MFA challenge is single-use; a failed code returns to the password step', () => {
+
+  // The backend consumes the pending MFA challenge on every attempt (success
+  // or failure), so a wrong code cannot be retried in place — the user must
+  // re-authenticate. verifyMfa()/completeSetup() must therefore bounce back to
+  // the password step with an accurate reason instead of stranding the user on
+  // a code prompt that can never succeed. Regression test for issue #76.
+
+  function atMfaStep(wrapper) {
+    wrapper.vm.step = 'mfa'
+    wrapper.vm.mfaNonce = 'NONCE'
+    wrapper.vm.mfaCode = '000000'
+  }
+
+  it('wrong code returns to the password step with a "sign in again" message', async () => {
+    api.loginMfa.mockRejectedValue({ response: { status: 422, data: { data: 'Invalid code' } } })
+
+    const wrapper = mountLogin()
+    atMfaStep(wrapper)
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('password')
+    expect(wrapper.vm.error).toBe('That code was incorrect. Please sign in again to try once more.')
+    expect(wrapper.vm.mfaCode).toBe('')
+    expect(wrapper.vm.mfaNonce).toBe('')
+    expect(routeAfterLogin).not.toHaveBeenCalled()
+  })
+
+  it('expired/missing challenge returns to the password step with the expiry message', async () => {
+    api.loginMfa.mockRejectedValue({ response: { status: 422, data: { data: 'MFA challenge expired or missing' } } })
+
+    const wrapper = mountLogin()
+    atMfaStep(wrapper)
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('password')
+    expect(wrapper.vm.error).toBe('Your sign-in session expired. Please sign in again.')
+  })
+
+  it('a 429 lockout returns to the password step with the rate-limit message', async () => {
+    api.loginMfa.mockRejectedValue({ response: { status: 429, data: { data: 'Not Allowed' } } })
+
+    const wrapper = mountLogin()
+    atMfaStep(wrapper)
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('password')
+    expect(wrapper.vm.error).toBe('Too many attempts. Please wait a minute, then sign in again.')
+  })
+
+  it('a network error (no response) keeps the user on the MFA step and surfaces handleError', async () => {
+    api.loginMfa.mockRejectedValue(new Error('Network Error'))
+
+    const wrapper = mountLogin()
+    atMfaStep(wrapper)
+    wrapper.vm.verifyMfa()
+    await flushPromises()
+
+    // Challenge may still be valid (request may not have reached the server) —
+    // don't force a re-auth; just surface the error and clear the code.
+    expect(wrapper.vm.step).toBe('mfa')
+    expect(wrapper.vm.handleError).toHaveBeenCalled()
+    expect(wrapper.vm.mfaCode).toBe('')
+  })
+
+  it('completeSetup() wrong code returns to the password step (setup is also single-use)', async () => {
+    api.loginMfaSetup.mockRejectedValue({ response: { status: 422, data: { data: 'Invalid code' } } })
+
+    const wrapper = mountLogin()
+    wrapper.vm.enrollment = { secret: 'S', otpauth_uri: 'otpauth://x' }
+    wrapper.vm.step = 'mfa_setup'
+    wrapper.vm.mfaNonce = 'ENROLL'
+    wrapper.vm.mfaCode = '111111'
+    wrapper.vm.completeSetup()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('password')
+    expect(wrapper.vm.error).toBe('That code was incorrect. Please sign in again to try once more.')
+    expect(wrapper.vm.enrollment).toBeNull()
+  })
+
+  it('completeSetup() expired session shows the setup-specific expiry message', async () => {
+    api.loginMfaSetup.mockRejectedValue({ response: { status: 422, data: { data: 'Setup session expired' } } })
+
+    const wrapper = mountLogin()
+    wrapper.vm.enrollment = { secret: 'S', otpauth_uri: 'otpauth://x' }
+    wrapper.vm.step = 'mfa_setup'
+    wrapper.vm.mfaCode = '222222'
+    wrapper.vm.completeSetup()
+    await flushPromises()
+
+    expect(wrapper.vm.step).toBe('password')
+    expect(wrapper.vm.error).toBe('Your setup session expired. Please sign in again.')
+  })
+
+})
+
 describe('Login.vue — forgot links never submit the login form', () => {
 
   it('"Forgot your username?" is a non-submitting button that toggles help without calling the API', async () => {

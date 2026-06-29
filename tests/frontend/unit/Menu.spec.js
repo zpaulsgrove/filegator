@@ -46,7 +46,7 @@ const BDropdownItemStub = {
 
 // ── Mount helper ──────────────────────────────────────────────────────────────
 
-function mountMenu(userOverrides = {}) {
+function mountMenu(userOverrides = {}, isFn = role => role !== 'guest') {
   const user = {
     name: 'Alice',
     role: 'user',
@@ -67,7 +67,7 @@ function mountMenu(userOverrides = {}) {
     mocks: {
       lang: s => s,
       handleError: jest.fn(),
-      is: role => role !== 'guest',
+      is: isFn,
       $store: store,
       $router: { push: jest.fn() },
       $route: { path: '/' },
@@ -142,5 +142,24 @@ describe('Menu.vue — folder-switcher dropdown', () => {
     wrapper.vm.switchFolder('/projects')
 
     expect(api.selectFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe('Menu.vue — admin nav links (is(\'admin\') gating)', () => {
+  // Faithful is(): compares the requested role to the actual user role.
+  it('shows the admin nav links (incl. audit-log) for an admin', () => {
+    const wrapper = mountMenu({ role: 'admin' }, role => role === 'admin')
+
+    expect(wrapper.find('[data-test="nav-audit-log"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nav-users"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nav-folder-access"]').exists()).toBe(true)
+  })
+
+  it('hides the admin nav links for a non-admin user', () => {
+    const wrapper = mountMenu({ role: 'user' }, role => role === 'user')
+
+    expect(wrapper.find('[data-test="nav-audit-log"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="nav-users"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="nav-folder-access"]').exists()).toBe(false)
   })
 })

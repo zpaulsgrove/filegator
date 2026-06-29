@@ -107,10 +107,21 @@ class AuditLog implements Service
             $this->maxAgeDays = (int) $config['max_age_days'];
         }
 
-        $this->crypto = new MfaSecretCrypto();
-        $this->crypto->init(['key_path' => (string) $config['key_path']]);
+        $this->crypto = $this->makeCrypto((string) $config['key_path']);
 
         $this->ensureLogFile();
+    }
+
+    /**
+     * Build the at-rest encryptor. Seam so tests can inject a failing crypto
+     * to exercise the record() swallow path.
+     */
+    protected function makeCrypto(string $keyPath): MfaSecretCrypto
+    {
+        $crypto = new MfaSecretCrypto();
+        $crypto->init(['key_path' => $keyPath]);
+
+        return $crypto;
     }
 
     /**

@@ -10,16 +10,22 @@
             "backend/Services/PasswordReset",
             // Audit log: encrypted PII, irreversible retention deletion, and
             // time-range/cutoff comparisons — exactly the operator/TTL code this
-            // gate protects. Scoped per-FILE: AuditMailer.php / WeeklyDigest.php
-            // in the same dir have no unit tests and would depress Covered-MSI.
-            "backend/Services/Audit/AuditLog.php"
+            // gate protects. The dir is scoped but the two untested siblings
+            // (AuditMailer/WeeklyDigest) are excluded below, so in practice only
+            // AuditLog.php is mutated. NOTE: `directories` entries must be
+            // folders — Infection's Finder throws on a file path here.
+            "backend/Services/Audit"
         ],
         "excludes": [
-            // Thin adapters marked @codeCoverageIgnore with no unit coverage.
-            // Paths are relative to the source directories above (Infection resolves
-            // excludes within each source folder), so these sit under backend/Services/Auth.
+            // Files with no unit coverage. Paths are relative to the source
+            // directories above (Infection resolves excludes within each source
+            // folder): LDAP/WPAuth sit under backend/Services/Auth; AuditMailer/
+            // WeeklyDigest under backend/Services/Audit (no unit tests — they
+            // would depress Covered-MSI, so keep them out until tested).
             "Adapters/LDAP.php",
-            "Adapters/WPAuth.php"
+            "Adapters/WPAuth.php",
+            "AuditMailer.php",
+            "WeeklyDigest.php"
         ]
     },
     "mutators": {

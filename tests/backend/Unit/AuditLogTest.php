@@ -12,6 +12,7 @@ namespace Tests\Unit;
 
 use Filegator\Services\Audit\AuditLog;
 use Filegator\Services\Logger\LoggerInterface;
+use Filegator\Services\Mfa\MfaSecretCrypto;
 use Tests\TestCase;
 
 /**
@@ -417,8 +418,79 @@ class AuditLogTest extends TestCase
         // Must not throw despite the unwritable log path.
         $audit->record($this->event());
 
+        // Assert the SPECIFIC failure, not just any 'AuditLog' line (every log
+        // line starts with 'AuditLog', so the substring alone is tautological).
         $this->assertNotEmpty($this->logger->messages, 'a failure should be logged');
-        $this->assertStringContainsString('AuditLog', $this->logger->messages[0]);
+        $this->assertStringContainsString('cannot open log file', $this->logger->messages[0]);
+    }
+
+    public function testRecordSwallowsCryptoFailureViaCatchBlock()
+    {
+        // The fopen-false path returns early; this drives the try/catch swallow
+        // (encrypt throwing) so a crypto failure can't break a file op either.
+        $audit = new CryptoFailingAuditLog($this->logger);
+        $audit->init([
+            'log_file' => $this->logFile,
+            'key_path' => $this->keyPath,
+            'max_age_days' => 30,
+        ]);
+
+        $audit->record($this->event());
+
+        $this->assertSame([], $this->rawLines(), 'nothing written when encrypt throws');
+        $this->assertNotEmpty($this->logger->messages);
+        $this->assertStringContainsString('record failed', $this->logger->messages[0]);
+    }
+
+    public function testFirstEverPruneRunsWhenMarkerIsZero()
+    {
+        // A marker of literal "0" means $last === 0, so the `$last !== 0 && ...`
+        // gate must NOT short-circuit — the first prune has to run.
+        $now = 2_000_000_000;
+        $audit = $this->makeClockAudit($now, 30);
+        $cutoff = $now - (30 * 86400);
+
+        $this->writeMarker($now); // disable prune while seeding the expired line
+        $audit->record($this->event(['ts' => $cutoff - 100, 'path' => '/old']));
+
+        $this->writeMarker(0);
+        $audit->record($this->event(['ts' => $now, 'path' => '/fresh']));
+
+        $this->assertCount(1, $this->rawLines(), 'last==0 forced the prune; /old swept');
+        $this->assertSame(['/fresh'], array_column($audit->query(), 'path'));
+    }
+
+    public function testMaxAgeDaysConfigIsParsedAndGuarded()
+    {
+        $now = 2_000_000_000;
+
+        // A string config value must cast to int and take effect.
+        $audit45 = new ClockableAuditLog($this->logger);
+        $audit45->fakeNow = $now;
+        $audit45->init([
+            'log_file' => $this->logFile,
+            'key_path' => $this->keyPath,
+            'max_age_days' => '45',
+        ]);
+        $this->writeMarker($now); // no prune; test the query-side window
+        $audit45->record($this->event(['ts' => $now - (40 * 86400), 'path' => '/in45']));
+        $this->assertSame(['/in45'], array_column($audit45->query(), 'path'), '40d is within a parsed 45d window');
+
+        // A non-positive value fails the `> 0` guard and keeps the 30-day default.
+        $this->resetTempDir();
+        @unlink($this->logFile);
+        @unlink($this->logFile.'.pruned');
+        $audit0 = new ClockableAuditLog($this->logger);
+        $audit0->fakeNow = $now;
+        $audit0->init([
+            'log_file' => $this->logFile,
+            'key_path' => $this->keyPath,
+            'max_age_days' => 0,
+        ]);
+        $this->writeMarker($now);
+        $audit0->record($this->event(['ts' => $now - (20 * 86400), 'path' => '/in30']));
+        $audit0->record($this->event(['ts' => $now - (40 * 86400), 'path' => '/out30']));
+        $this->assertSame(['/in30'], array_column($audit0->query(), 'path'), '0 ignored -> default 30d window');
     }
 
     public function testLogFileCreatedWith0600()
@@ -459,5 +531,23 @@ class ClockableAuditLog extends AuditLog
     protected function now(): int
     {
         return $this->fakeNow;
+    }
+}
+
+/**
+ * AuditLog whose encryptor throws, to exercise record()'s try/catch swallow.
+ *
+ * @internal
+ */
+class CryptoFailingAuditLog extends AuditLog
+{
+    protected function makeCrypto(string $keyPath): MfaSecretCrypto
+    {
+        return new class() extends MfaSecretCrypto {
+            public function encrypt(string $plaintext): string
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
     }
 }

@@ -39,8 +39,13 @@ describe('Admin audit log', () => {
     cy.get('[data-test="audit-table"]').should('be.visible')
     // The literal markup shows as text...
     cy.contains('[data-test="audit-table"]', 'onerror=alert(1)').should('exist')
-    // ...and is NOT parsed into a live <img> element.
+    // ...is NOT parsed into a live <img> element...
     cy.get('[data-test="audit-table"] img[src="x"]').should('not.exist')
+    // ...and is present in the DOM as HTML-escaped entities (proves {{ }}
+    // escaping directly, not just inferred from element-absence).
+    cy.get('[data-test="audit-table"]').then($el => {
+      expect($el.html()).to.include('&lt;img')
+    })
   })
 
   it('filters the activity list by action', () => {

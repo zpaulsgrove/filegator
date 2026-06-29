@@ -356,13 +356,55 @@ class FilesTest extends TestCase
         $this->assertOk();
 
         $events = $this->decodeResponseJson()['data']['events'];
-        $byPath = array_column($events, null, 'path');
+        // Exactly two events — array_column-by-path would mask an over-recording
+        // regression, so pin the count and actions before mapping.
+        $this->assertCount(2, $events);
+        $this->assertSame(['create', 'create'], array_column($events, 'action'));
 
+        $byPath = array_column($events, null, 'path');
         // Identical relative names, distinct global paths + correct attribution.
         $this->assertArrayHasKey('/john/shared.txt', $byPath);
         $this->assertArrayHasKey('/jane/shared.txt', $byPath);
         $this->assertSame('john@example.com', $byPath['/john/shared.txt']['user']);
         $this->assertSame('jane@example.com', $byPath['/jane/shared.txt']['user']);
+    }
+
+    public function testCreateFolderRecordsFolderDetail()
+    {
+        $this->freshAuditLog();
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+
+        $this->sendRequest('POST', '/createnew', ['type' => 'dir', 'name' => 'newfolder']);
+        $this->assertOk();
+
+        $events = $this->auditEvents(['action' => 'create']);
+        $this->assertCount(1, $events);
+        $this->assertSame('/john/newfolder', $events[0]['path']);
+        // The dir/file distinction in the trail lives only in this detail field.
+        $this->assertSame('folder', $events[0]['detail']);
+    }
+
+    public function testNoAuditRowWhenStorageReturnsFalse()
+    {
+        // When the storage adapter reports failure (returns false rather than
+        // throwing — e.g. SFTP/FTP), the controller must NOT record a phantom
+        // event. Swap in a Filesystem whose deleteFile() returns false.
+        $this->freshAuditLog();
+        $this->overrideConfig(['services' => [
+            'Filegator\Services\Storage\Filesystem' => ['handler' => '\Tests\Fakes\FailingFilesystem'],
+        ]]);
+
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/keep.txt');
+
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [['type' => 'file', 'path' => '/keep.txt', 'name' => 'keep.txt']],
+        ]);
+        $this->assertOk();
+
+        $this->assertSame([], $this->auditEvents(['action' => 'delete']), 'failed op records nothing');
     }
 
     public function testAuditLogEndpointForwardsActionFilter()

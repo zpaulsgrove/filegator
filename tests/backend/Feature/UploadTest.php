@@ -123,6 +123,60 @@ class UploadTest extends TestCase
         $this->assertSame('/john/audited.txt', $events[0]['path']);
     }
 
+    public function testOverwriteUploadRecordsOverwrittenDetail()
+    {
+        @unlink(TEST_TMP_PATH.'audit_log.jsonl');
+        @unlink(TEST_TMP_PATH.'audit_log.jsonl.pruned');
+
+        // With overwrite_on_upload, a colliding upload replaces in place (no
+        // upcount) and the trail must flag it as destructive via detail.
+        $this->overrideConfig(['overwrite_on_upload' => true]);
+
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/dup.txt'); // pre-existing target
+
+        $fp = fopen(TEST_FILE, 'w');
+        fseek($fp, 0.5 * 1024 * 1024 - 1, SEEK_CUR);
+        fwrite($fp, 'a');
+        fclose($fp);
+
+        $files = ['file' => new UploadedFile(TEST_FILE, 'dup.txt', 'text/plain', null, true)];
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableCurrentChunkSize' => 0.5 * 1024 * 1024,
+            'resumableTotalChunks' => 1,
+            'resumableTotalSize' => 0.5 * 1024 * 1024,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-OVERWRITE-TEST',
+            'resumableFilename' => 'dup.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        $this->sendRequest('GET', '/upload', $data, $files);
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init([
+            'log_file' => TEST_TMP_PATH.'audit_log.jsonl',
+            'key_path' => TEST_TMP_PATH.'audit_encryption.key',
+            'max_age_days' => 30,
+        ]);
+
+        $events = $audit->query(['action' => 'upload']);
+        $this->assertCount(1, $events);
+        // Overwrite -> actual path is the original name (not upcounted)...
+        $this->assertSame('/john/dup.txt', $events[0]['path']);
+        // ...and the destructive nature is recorded.
+        $this->assertSame('overwritten', $events[0]['detail']);
+    }
+
     public function testFileUploadWithTwoChunks()
     {
         $this->signIn('john@example.com', 'john123');

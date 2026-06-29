@@ -122,5 +122,13 @@ class Security implements Service
             $this->response->headers->set('X-Frame-Options', 'sameorigin');
             $this->response->headers->set('Content-Security-Policy', 'frame-ancestors \'self\'');
         }
+
+        // On HTTPS, tell the browser to refuse future plaintext connections so
+        // the (Secure) session cookie can never be downgraded onto cleartext
+        // HTTP (defence-in-depth for CWE-614). Never emitted over plain HTTP,
+        // where browsers ignore it anyway.
+        if ($this->request->isSecure()) {
+            $this->response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
     }
 }

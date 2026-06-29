@@ -174,7 +174,10 @@ class User implements \JsonSerializable
     protected function checkValidRole($role)
     {
         if (! in_array($role, $this->available_roles)) {
-            throw new \Exception("User role {$role} does not exists.");
+            // Do not echo the submitted value back: it is reflected verbatim in
+            // the 422 body and rendered by the frontend, so an attacker-chosen
+            // role string must not become part of the error message (XSS sink).
+            throw new \Exception('Invalid role');
         }
 
         return true;
@@ -184,7 +187,8 @@ class User implements \JsonSerializable
     {
         foreach ($permissions as $permission) {
             if ($permission && ! in_array($permission, $this->available_permissions)) {
-                throw new \Exception("Permission {$permission} does not exists.");
+                // See checkValidRole: never reflect the submitted value.
+                throw new \Exception('Invalid permission');
             }
         }
 

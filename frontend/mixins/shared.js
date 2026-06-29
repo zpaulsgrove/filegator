@@ -93,6 +93,17 @@ const funcs = {
           : match
       })
     },
+    escapeHtml(value) {
+      // Buefy's $toast/$dialog render `message` with v-html, so any server- or
+      // user-derived string must be HTML-escaped before display to avoid XSS.
+      return String(value).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[c]))
+    },
     is(role) {
       return this.$store.state.user.role == role
     },
@@ -136,14 +147,14 @@ const funcs = {
 
       if (typeof error == 'string') {
         this.$toast.open({
-          message: this.lang(error),
+          message: this.escapeHtml(this.lang(error)),
           type: 'is-danger',
           duration: 5000,
         })
         return
       } else if (error && error.response && error.response.data && error.response.data.data) {
         this.$toast.open({
-          message: this.lang(error.response.data.data),
+          message: this.escapeHtml(this.lang(error.response.data.data)),
           type: 'is-danger',
           duration: 5000,
         })

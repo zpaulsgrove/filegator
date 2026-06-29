@@ -7,7 +7,12 @@
         "directories": [
             "backend/Services/Auth",
             "backend/Services/Mfa",
-            "backend/Services/PasswordReset"
+            "backend/Services/PasswordReset",
+            // Audit log: encrypted PII, irreversible retention deletion, and
+            // time-range/cutoff comparisons — exactly the operator/TTL code this
+            // gate protects. Scoped per-FILE: AuditMailer.php / WeeklyDigest.php
+            // in the same dir have no unit tests and would depress Covered-MSI.
+            "backend/Services/Audit/AuditLog.php"
         ],
         "excludes": [
             // Thin adapters marked @codeCoverageIgnore with no unit coverage.

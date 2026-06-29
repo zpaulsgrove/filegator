@@ -763,6 +763,19 @@ class AdminTest extends TestCase
         $this->assertStatus(404);
     }
 
+    public function testAuditLogIsAdminOnly()
+    {
+        // The audit log exposes PII (client paths + source IPs); the route's
+        // roles=>['admin'] gate is the sole server-side authorization boundary.
+        $this->signOut();
+        $this->sendRequest('GET', '/admin/audit-log');
+        $this->assertStatus(404);
+
+        $this->signIn('john@example.com', 'john123');
+        $this->sendRequest('GET', '/admin/audit-log');
+        $this->assertStatus(404);
+    }
+
     public function testFolderAccessAuditListsAssignedFolders()
     {
         $this->signIn('admin@example.com', 'admin123');

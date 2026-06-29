@@ -333,6 +333,144 @@ class FilesTest extends TestCase
         $this->assertFileExists(TEST_REPOSITORY.'/note.txt');
     }
 
+    public function testAuditLogEndpointReturnsCrossUserEventsThroughHttp()
+    {
+        $this->freshAuditLog();
+
+        // Two different users create the SAME relative filename.
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'shared.txt']);
+        $this->assertOk();
+
+        $this->signIn('jane@example.com', 'jane123');
+        mkdir(TEST_REPOSITORY.'/jane');
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'shared.txt']);
+        $this->assertOk();
+
+        // An admin reads the global trail through the REAL HTTP endpoint
+        // (route gate + controller + {events:[...]} envelope), not a hand-built
+        // service instance.
+        $this->signIn('admin@example.com', 'admin123');
+        $this->sendRequest('GET', '/admin/audit-log');
+        $this->assertOk();
+
+        $events = $this->decodeResponseJson()['data']['events'];
+        $byPath = array_column($events, null, 'path');
+
+        // Identical relative names, distinct global paths + correct attribution.
+        $this->assertArrayHasKey('/john/shared.txt', $byPath);
+        $this->assertArrayHasKey('/jane/shared.txt', $byPath);
+        $this->assertSame('john@example.com', $byPath['/john/shared.txt']['user']);
+        $this->assertSame('jane@example.com', $byPath['/jane/shared.txt']['user']);
+    }
+
+    public function testAuditLogEndpointForwardsActionFilter()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+
+        touch(TEST_REPOSITORY.'/del.txt', $this->timestamp);
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'made.txt']);
+        $this->assertOk();
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [['type' => 'file', 'path' => '/del.txt', 'name' => 'del.txt', 'time' => $this->timestamp]],
+        ]);
+        $this->assertOk();
+
+        // Controller must forward request filters into AuditLog::query().
+        $this->sendRequest('GET', '/admin/audit-log', ['action' => 'delete']);
+        $this->assertOk();
+        $events = $this->decodeResponseJson()['data']['events'];
+        $this->assertCount(1, $events);
+        $this->assertSame('delete', $events[0]['action']);
+    }
+
+    public function testZipAndUnzipRecordAudit()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+        touch(TEST_REPOSITORY.'/z1.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/zipitems', [
+            'items' => [['type' => 'file', 'path' => '/z1.txt', 'name' => 'z1.txt', 'time' => $this->timestamp]],
+            'destination' => '/',
+            'name' => 'arch.zip',
+        ]);
+        $this->assertOk();
+
+        $zip = $this->auditEvents(['action' => 'zip']);
+        $this->assertCount(1, $zip);
+        $this->assertSame('admin@example.com', $zip[0]['user']);
+        $this->assertSame('/arch.zip', $zip[0]['path']);
+
+        $this->sendRequest('POST', '/unzipitem', [
+            'item' => '/arch.zip',
+            'destination' => '/',
+        ]);
+        $this->assertOk();
+
+        $unzip = $this->auditEvents(['action' => 'unzip']);
+        $this->assertCount(1, $unzip);
+        $this->assertSame('from /arch.zip', $unzip[0]['detail']);
+    }
+
+    public function testChmodRecordsAudit()
+    {
+        $this->freshAuditLog();
+
+        // Provision a chmod-capable user without touching the shared fixture
+        // (mirrors testChmodItemsChangesFilePermissions).
+        $app = $this->sendRequest('GET', '/getuser');
+        $auth = $app->resolve(AuthInterface::class);
+        $cu = new User();
+        $cu->setRole('user');
+        $cu->setHomedir('/cu');
+        $cu->setUsername('cu@example.com');
+        $cu->setName('Chmod User');
+        $cu->setPermissions(['read', 'write', 'chmod']);
+        $auth->add($cu, 'cu12345');
+
+        $this->signIn('cu@example.com', 'cu12345');
+        mkdir(TEST_REPOSITORY.'/cu');
+        touch(TEST_REPOSITORY.'/cu/perm.txt');
+
+        $this->sendRequest('POST', '/chmoditems', [
+            'items' => [['type' => 'file', 'path' => '/perm.txt', 'name' => 'perm.txt']],
+            'permissions' => '0600',
+        ]);
+        $this->assertOk();
+
+        $chmod = $this->auditEvents(['action' => 'chmod']);
+        $this->assertCount(1, $chmod);
+        $this->assertSame('/cu/perm.txt', $chmod[0]['path']);
+        $this->assertSame('mode 0600', $chmod[0]['detail']);
+    }
+
+    public function testFileOpSucceedsWhenAuditLogIsUnwritable()
+    {
+        // A broken audit sink must never turn a successful file op into a 500
+        // (the feature's headline safety property).
+        $this->overrideConfig(['services' => [
+            'Filegator\Services\Audit\AuditLog' => ['config' => [
+                'log_file' => TEST_TMP_PATH.'no_such_dir/audit.jsonl', // parent missing -> writes fail
+                'key_path' => TEST_TMP_PATH.'audit_encryption.key',
+                'max_age_days' => 30,
+            ]],
+        ]]);
+
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/del.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [['type' => 'file', 'path' => '/del.txt', 'name' => 'del.txt', 'time' => $this->timestamp]],
+        ]);
+
+        $this->assertOk();
+        $this->assertFileDoesNotExist(TEST_REPOSITORY.'/john/del.txt');
+    }
+
     public function testDownloadFileHeaders()
     {
         $username = 'john@example.com';

@@ -27,6 +27,22 @@ describe('Admin audit log', () => {
     })
   })
 
+  it('renders an attacker-controlled filename inert (no stored XSS)', () => {
+    // Audit.vue carries an explicit "never v-html" contract: filenames are
+    // attacker-controlled and rendered via {{ }} only. A crafted name must
+    // appear as escaped text, never as live markup in the admin's session.
+    cy.createFile('<img src=x onerror=alert(1)>.txt')
+
+    cy.visit('/')
+    cy.get('[data-test="nav-audit-log"]').click()
+
+    cy.get('[data-test="audit-table"]').should('be.visible')
+    // The literal markup shows as text...
+    cy.contains('[data-test="audit-table"]', 'onerror=alert(1)').should('exist')
+    // ...and is NOT parsed into a live <img> element.
+    cy.get('[data-test="audit-table"] img[src="x"]').should('not.exist')
+  })
+
   it('filters the activity list by action', () => {
     cy.createFile('only-create.txt')
 

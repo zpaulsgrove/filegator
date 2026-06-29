@@ -47,7 +47,10 @@ return [
                     function () {
                         return new \Monolog\Handler\StreamHandler(
                             __DIR__.'/private/logs/app.log',
-                            \Monolog\Logger::DEBUG
+                            // Quieter in production: WARNING and above avoids
+                            // persisting routine request detail to disk, while
+                            // development keeps DEBUG for diagnostics.
+                            APP_ENV == 'production' ? \Monolog\Logger::WARNING : \Monolog\Logger::DEBUG
                         );
                     },
                 ],
@@ -82,6 +85,13 @@ return [
             'handler' => '\Filegator\Services\Cors\Cors',
             'config' => [
                 'enabled' => APP_ENV == 'production' ? false : true,
+                // Origins permitted to make credentialed cross-origin requests.
+                // Leave empty to reflect any Origin (convenient for same-machine
+                // development). If you enable CORS in production you MUST list the
+                // exact front-end origins here, e.g.
+                // ['https://app.example.com'] — otherwise any site could issue
+                // authenticated requests on a logged-in user's behalf.
+                'allowed_origins' => [],
             ],
         ],
         'Filegator\Services\Tmpfs\TmpfsInterface' => [

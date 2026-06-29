@@ -125,18 +125,40 @@ class UploadController
 
         // if all the chunks are present, create final file and store it
         if ($chunks_size >= $total_size) {
-            for ($i = 1; $i <= $total_chunks; ++$i) {
-                $part = $this->tmpfs->readStream($prefix.$file_name.'.part'.$i);
-                $this->tmpfs->write($file_name, $part['stream'], true);
+            // Assemble into a per-user, per-upload namespaced tmpfs key — NOT
+            // the bare, client-controlled $file_name. The tmpfs directory is
+            // shared across all users/sessions, so writing the reassembled file
+            // under the bare name let two concurrent uploads that happen to
+            // share a filename append into the same file and corrupt or leak
+            // each other's bytes (CWE-362 / CWE-668). Serialize the assembly
+            // with an atomic O_EXCL marker so only one request reassembles a
+            // given upload at a time.
+            $assembled = $prefix.'assembled';
+
+            if (! $this->tmpfs->addIfAbsent($prefix.'_assembling')) {
+                // Another request for this same upload is already assembling it.
+                return $response->json('Uploaded');
             }
 
-            $final = $this->tmpfs->readStream($file_name);
-            $res = $this->storage->store($destination, $final['filename'], $final['stream'], $overwrite_on_upload);
+            try {
+                for ($i = 1; $i <= $total_chunks; ++$i) {
+                    $part = $this->tmpfs->readStream($prefix.$file_name.'.part'.$i);
+                    // The first write truncates (append=false) so a stale
+                    // assembled file from an interrupted run cannot accumulate;
+                    // every subsequent part appends.
+                    $this->tmpfs->write($assembled, $part['stream'], $i > 1);
+                }
 
-            // cleanup
-            $this->tmpfs->remove($file_name);
-            foreach ($this->tmpfs->findAll($prefix.'*') as $expired_chunk) {
-                $this->tmpfs->remove($expired_chunk['name']);
+                $final = $this->tmpfs->readStream($assembled);
+                // Store under the sanitized client filename (unchanged
+                // behaviour), sourced from the namespaced assembled stream.
+                $res = $this->storage->store($destination, $this->tmpfs->sanitizeFilename($file_name), $final['stream'], $overwrite_on_upload);
+            } finally {
+                // cleanup: removes the parts, the assembled file, and the
+                // _assembling / _error markers (all share $prefix).
+                foreach ($this->tmpfs->findAll($prefix.'*') as $expired_chunk) {
+                    $this->tmpfs->remove($expired_chunk['name']);
+                }
             }
 
             if ($res !== false) {

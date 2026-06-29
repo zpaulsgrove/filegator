@@ -128,6 +128,17 @@ class DownloadController
 
         $uniqid = $archiver->createArchive($this->storage);
 
+        // Bind this archive to the creating session. batchDownloadStart() serves
+        // a file straight out of the shared tmpfs by name, so without an
+        // ownership record any user could download anyone else's archive by
+        // guessing/replaying the id (CWE-639 IDOR). Record it before save() so
+        // it is persisted when the session lock is released for the build.
+        $owned = (array) $this->session->get('batch_archives', []);
+        $owned[] = $uniqid;
+        // Keep only the most recent handful so the session cannot grow without
+        // bound across many downloads.
+        $this->session->set('batch_archives', array_slice($owned, -50));
+
         // close session
         $this->session->save();
 
@@ -150,6 +161,15 @@ class DownloadController
         if (! $this->ensureActiveHomedir($response)) return;
 
         $uniqid = (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $request->input('uniqid'));
+
+        // Only serve archives this session created (see batchDownloadCreate).
+        // Without this check the shared-tmpfs read below is an IDOR: any caller
+        // could download another user's archive by supplying its id.
+        $owned = (array) $this->session->get('batch_archives', []);
+        if ($uniqid === '' || ! in_array($uniqid, $owned, true)) {
+            return $response->redirect('/');
+        }
+
         $file = $tmpfs->readStream($uniqid);
 
         $streamedResponse->setCallback(function () use ($file, $tmpfs, $uniqid) {

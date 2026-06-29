@@ -1083,6 +1083,35 @@ class FilesTest extends TestCase
         $this->assertEquals(414, $headers->get('content-length'));
     }
 
+    public function testBatchDownloadIsScopedToCreatingSession()
+    {
+        // Security regression: a batch archive lives in the shared tmpfs and is
+        // fetched by id. The id must be bound to the session that created it,
+        // otherwise any other user could download it by replaying the id (IDOR).
+        $this->signIn('admin@example.com', 'admin123');
+
+        mkdir(TEST_REPOSITORY.'/secret');
+        touch(TEST_REPOSITORY.'/secret/private.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/batchdownload', [
+            'items' => [
+                ['type' => 'dir', 'path' => '/secret', 'name' => 'secret', 'time' => $this->timestamp],
+            ],
+        ]);
+        $this->assertOk();
+        $uniqid = json_decode($this->response->getContent())->data->uniqid;
+
+        // A different user (also holding the batchdownload permission, so the
+        // route gate is passed) must NOT be able to fetch admin's archive.
+        $this->signIn('john@example.com', 'john123');
+        $this->sendRequest('GET', '/batchdownload', [
+            'uniqid' => $uniqid,
+        ]);
+
+        // Blocked: redirected away instead of streaming the archive.
+        $this->assertStatus(302);
+    }
+
     public function testUpdateFileContent()
     {
         $username = 'john@example.com';

@@ -26,6 +26,15 @@ interface TmpfsInterface
 
     public function getFileLocation(string $filename): string;
 
+    /**
+     * Normalise a filename to the safe form used for every tmpfs key (strips
+     * path separators and reserved/control characters). Exposed so callers that
+     * need the sanitized destination name without round-tripping through a
+     * tmpfs key (e.g. assembling an upload under a namespaced key but storing it
+     * under the user's chosen name) can reuse the exact same rules.
+     */
+    public function sanitizeFilename(string $filename): string;
+
     public function clean(int $older_than);
 
     /**

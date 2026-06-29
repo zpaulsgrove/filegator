@@ -65,17 +65,8 @@
                 </b-upload>
               </b-field>
             </template>
-            <a v-if="can(['read', 'write']) && ! checked.length" class="add-new is-inline-block">
-              <b-dropdown :disabled="checked.length > 0" aria-role="list">
-                <span slot="trigger" data-test="new-menu">
-                  <b-icon icon="plus" size="is-small" /> {{ lang('New') }}
-                </span>
-
-                <b-dropdown-item aria-role="listitem" data-test="create-folder" @click="createFolder">
-                  <b-icon icon="folder" size="is-small" /> {{ lang('Folder') }}
-                </b-dropdown-item>
-
-              </b-dropdown>
+            <a v-if="can(['read', 'write']) && ! checked.length" class="add-new is-inline-block" data-test="new-menu" @click="createFolder">
+              <b-icon icon="plus" size="is-small" /> {{ lang('New Folder') }}
             </a>
             <a v-if="can('batchdownload') && checked.length" class="is-inline-block" data-test="batch-download" @click="batchDownload">
               <b-icon icon="download" size="is-small" /> {{ lang('Download') }}

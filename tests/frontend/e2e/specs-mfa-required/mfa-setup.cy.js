@@ -35,7 +35,7 @@ describe('Forced admin MFA setup', () => {
     cy.get('[data-test="logout"]').should('be.visible')
   })
 
-  it('rejects a wrong setup code', () => {
+  it('rejects a wrong setup code and returns to the password step', () => {
     cy.get('[data-test="login-username"]').type('admin')
     cy.get('[data-test="login-password"]').type('admin123')
     cy.get('[data-test="login-submit"]').click()
@@ -43,9 +43,13 @@ describe('Forced admin MFA setup', () => {
     cy.get('[data-test="login-mfa-setup-code"]').should('be.visible').type('000000')
     cy.get('[data-test="login-mfa-setup-submit"]').click()
 
+    // The setup challenge is single-use: the backend consumes it on every
+    // attempt, so a wrong code can't be retried against the now-dead secret.
+    // The app returns to the password step with an explanatory error (a fresh
+    // re-login regenerates the enrollment). See issue #76 / PR #90.
     cy.get('[data-test="login-error"]').should('be.visible')
-    // Still on the setup step, not authenticated.
-    cy.get('[data-test="login-mfa-setup-code"]').should('be.visible')
+    cy.get('[data-test="login-password"]').should('be.visible')
+    cy.get('[data-test="login-mfa-setup-code"]').should('not.exist')
     cy.get('[data-test="logout"]').should('not.exist')
   })
 })

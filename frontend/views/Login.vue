@@ -260,10 +260,7 @@ export default {
           this.$store.commit('setUser', user)
           routeAfterLogin(this.$store.state.user, this.$router, this.$store)
         })
-        .catch(() => {
-          this.error = this.lang('Invalid code')
-          this.mfaCode = ''
-        })
+        .catch(error => this.handleMfaError(error, false))
     },
     onMfaInput() {
       this.error = ''
@@ -284,10 +281,45 @@ export default {
           this.pendingUser = res.user
           this.setupBackupCodes = res.backup_codes
         })
-        .catch(() => {
-          this.error = this.lang('Invalid code')
-          this.mfaCode = ''
-        })
+        .catch(error => this.handleMfaError(error, true))
+    },
+    handleMfaError(error, isSetup) {
+      // The MFA verify and setup challenges are single-use: the backend clears
+      // the pending challenge on EVERY attempt, success or failure (see
+      // AuthController::loginMfa / loginMfaSetup, "clear immediately regardless
+      // of outcome"). So once the server has responded, a wrong code cannot be
+      // retried in place — every later submit returns "challenge expired". The
+      // old catch left the user on the code prompt with a flat "Invalid code",
+      // inviting a retry that could never succeed. Instead, send them back to
+      // the password step with an accurate reason. See issue #76.
+
+      // No response (network/timeout): the request may not have reached the
+      // server, so the challenge might still be valid — surface the error and
+      // let the user retry in place rather than forcing a needless re-auth.
+      if (!error || !error.response) {
+        this.handleError(error)
+        this.mfaCode = ''
+        return
+      }
+
+      const status = error.response.status
+      const serverMsg = (error.response.data && error.response.data.data) || ''
+      let message
+      if (status === 429) {
+        message = 'Too many attempts. Please wait a minute, then sign in again.'
+      } else if (serverMsg === 'Invalid code') {
+        message = 'That code was incorrect. Please sign in again to try once more.'
+      } else {
+        // expired / missing / wrong-phase / binding-or-nonce mismatch
+        message = isSetup
+          ? 'Your setup session expired. Please sign in again.'
+          : 'Your sign-in session expired. Please sign in again.'
+      }
+
+      // reset() returns to the password step and clears error/code/nonce; set
+      // the message afterwards so it survives onto the password screen.
+      this.reset()
+      this.error = this.lang(message)
     },
     finishSetup() {
       this.$store.commit('setUser', this.pendingUser)

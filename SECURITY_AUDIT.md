@@ -39,16 +39,16 @@ so they are merged below into **7 distinct code/config findings** plus dependenc
 
 ## Severity summary
 
-> **Remediation status:** all 8 confirmed findings have been fixed on branch
-> `claude/app-security-audit-l9xp3i` (see [Remediation](#remediation) for the
-> per-finding changes and commits).
+> **Remediation status:** all 8 confirmed findings are fixed — findings 1, 2, 5, 6,
+> 7, 8 on branch `claude/app-security-audit-l9xp3i`, and findings 3, 4 upstream in
+> PR #71 (adopted here via merge). See [Remediation](#remediation) for details.
 
 | # | Severity | Finding | Location | Status |
 |---|----------|---------|----------|--------|
 | 1 | **High** | LDAP injection in login username → `ldap_search` filter | `backend/Services/Auth/Adapters/LDAP.php` | ✅ Fixed |
 | 2 | **High** | Vulnerable TOTP library `spomky-labs/otphp` 11.2.2 (2 advisories) | `composer.lock` | ✅ Fixed |
-| 3 | **Medium** | IDOR / predictable token: any user can download another user's batch archive | `backend/Controllers/DownloadController.php` | ✅ Fixed |
-| 4 | **Medium** | Upload reassembly uses non-namespaced filename in shared tmpfs (race / cross-user) | `backend/Controllers/UploadController.php` | ✅ Fixed |
+| 3 | **Medium** | IDOR / predictable token: any user can download another user's batch archive | `backend/Controllers/DownloadController.php` | ✅ Fixed upstream (PR #71) |
+| 4 | **Medium** | Upload reassembly uses non-namespaced filename in shared tmpfs (race / cross-user) | `backend/Controllers/UploadController.php` | ✅ Fixed upstream (PR #71) |
 | 5 | **Medium** | Default admin ships with publicly-known credentials (`admin` / `admin123`) | `private/users.json.blank` | ✅ Fixed |
 | 6 | **Low** | Session cookie `Secure` flag off by default (`cookie_secure => null`) | `configuration_sample.php` | ✅ Fixed |
 | 7 | **Low** | User enumeration via password-reset response timing | `backend/Services/PasswordReset/PasswordResetService.php` | ✅ Fixed |
@@ -317,22 +317,24 @@ the audit is auditable. Several are legitimate robustness/hygiene nits that are 
 
 ## Remediation
 
-All confirmed findings were fixed on `claude/app-security-audit-l9xp3i`, each as a
-focused commit with tests where applicable. The full backend test suite passes.
+Findings 1, 2, 5, 6, 7, 8 were fixed on `claude/app-security-audit-l9xp3i`, each as a
+focused commit with tests where applicable. Findings 3 and 4 were independently fixed
+upstream in **PR #71** (`fix(security): isolate batch archives and chunked uploads
+across tenants`); this branch adopts that fix via merge rather than duplicating it.
 
 | # | Fix | Key files |
 |---|-----|-----------|
 | 1 | Escape the login username with `ldap_escape(..., LDAP_ESCAPE_FILTER)` before it enters the search filter | `backend/Services/Auth/Adapters/LDAP.php` |
 | 2 | Bump `spomky-labs/otphp` to `^11.4.3` (locked to 11.5.0); `composer audit` now clean | `composer.json`, `composer.lock` |
-| 3 | Bind each batch-archive id to the creating session and reject unowned ids; generate the id with `random_bytes` instead of `uniqid()` | `backend/Controllers/DownloadController.php`, `backend/Services/Archiver/Adapters/ZipArchiver.php` |
-| 4 | Reassemble uploads under a per-user namespaced tmpfs key, serialize with an atomic `O_EXCL` marker, truncate-first; store under the sanitized name via new `Tmpfs::sanitizeFilename()` | `backend/Controllers/UploadController.php`, `backend/Services/Tmpfs/*` |
+| 3 | _(PR #71)_ Bind each batch-archive id to the creating session and reject unowned ids; generate the id with `random_bytes` instead of `uniqid()` | `backend/Controllers/DownloadController.php`, `backend/Services/Archiver/Adapters/ZipArchiver.php` |
+| 4 | _(PR #71)_ Reassemble uploads under a per-user namespaced tmpfs key, truncate-first; store under the sanitized name via new `Tmpfs::sanitizeFilename()` | `backend/Controllers/UploadController.php`, `backend/Services/Tmpfs/*` |
 | 5 | Randomize the seeded admin password on first run and surface it once in `private/INITIAL_ADMIN_PASSWORD.txt` (git-ignored); docs updated | `backend/Services/Auth/Adapters/JsonFile.php`, `README.md`, `docs/*` |
 | 6 | Set the cookie `Secure` flag when the request is HTTPS (incl. `X-Forwarded-Proto`); emit `Strict-Transport-Security` on HTTPS | `configuration_sample.php`, `backend/Services/Security/Security.php` |
 | 7 | Pad both `/password/forgot` branches to a common, configurable timing floor (default 1000ms) | `backend/Services/PasswordReset/PasswordResetService.php` |
 | 8 | HTML-escape server/error strings before the Buefy `v-html` toast; stop reflecting the submitted role/permission value in 422 bodies | `frontend/mixins/shared.js`, `backend/Services/Auth/User.php` |
 
-New regression tests: cross-session batch-download isolation (IDOR), and first-run
-admin-password randomization (incl. "existing file is never re-seeded").
+New regression tests: first-run admin-password randomization (incl. "existing file is
+never re-seeded"). Findings 3/4 ship their own isolation tests via PR #71.
 
 ## Recommended remediation order
 

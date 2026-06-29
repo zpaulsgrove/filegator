@@ -1083,33 +1083,39 @@ class FilesTest extends TestCase
         $this->assertEquals(414, $headers->get('content-length'));
     }
 
-    public function testBatchDownloadIsScopedToCreatingSession()
+    public function testBatchArchiveCannotBeDownloadedByAnotherUser()
     {
-        // Security regression: a batch archive lives in the shared tmpfs and is
-        // fetched by id. The id must be bound to the session that created it,
-        // otherwise any other user could download it by replaying the id (IDOR).
-        $this->signIn('admin@example.com', 'admin123');
+        // IDOR regression: an archive created by one user must not be
+        // retrievable by a different user who supplies its id. Both john and
+        // admin hold the batchdownload permission, so the route guard passes
+        // for both — the per-session ownership binding in the controller is
+        // what must reject the cross-user download (returning 404, never the
+        // bytes).
+        $this->signIn('john@example.com', 'john123');
 
-        mkdir(TEST_REPOSITORY.'/secret');
-        touch(TEST_REPOSITORY.'/secret/private.txt', $this->timestamp);
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/secret.txt', $this->timestamp);
 
         $this->sendRequest('POST', '/batchdownload', [
             'items' => [
-                ['type' => 'dir', 'path' => '/secret', 'name' => 'secret', 'time' => $this->timestamp],
+                [
+                    'type' => 'file',
+                    'path' => '/secret.txt',
+                    'name' => 'secret.txt',
+                    'time' => $this->timestamp,
+                ],
             ],
         ]);
         $this->assertOk();
         $uniqid = json_decode($this->response->getContent())->data->uniqid;
 
-        // A different user (also holding the batchdownload permission, so the
-        // route gate is passed) must NOT be able to fetch admin's archive.
-        $this->signIn('john@example.com', 'john123');
+        // A different authenticated user (also holding batchdownload) tries to
+        // grab john's archive by its id.
+        $this->signIn('admin@example.com', 'admin123');
         $this->sendRequest('GET', '/batchdownload', [
             'uniqid' => $uniqid,
         ]);
-
-        // Blocked: redirected away instead of streaming the archive.
-        $this->assertStatus(302);
+        $this->assertStatus(404);
     }
 
     public function testUpdateFileContent()

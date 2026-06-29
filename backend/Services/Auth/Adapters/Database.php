@@ -61,7 +61,7 @@ class Database implements Service, AuthInterface
             ->fetch('SELECT * FROM users WHERE username = ?', $user->getUsername())
         ;
 
-        if ($ret && $hash == $this->buildSessionHash($ret)) {
+        if ($ret && hash_equals($this->buildSessionHash($ret), (string) $hash)) {
             return $user;
         }
 

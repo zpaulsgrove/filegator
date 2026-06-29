@@ -4,3 +4,7 @@
 /mfa_encryption.key
 /audit_state.json
 /users.json.mfa.blank
+/audit_encryption.key
+/audit_log.jsonl
+/audit_log.jsonl.pruned
+/logs/*.log

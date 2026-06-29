@@ -29,7 +29,8 @@ class RecordsAuditEventsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->resetTempDir();
+        // Clear only this test's own files; do NOT resetTempDir() (it wipes the
+        // shared tmp tree and pollutes other suites under single-process runs).
         @unlink(TEST_TMP_PATH.'ra.jsonl');
         @unlink(TEST_TMP_PATH.'ra.jsonl.pruned');
         @unlink(TEST_TMP_PATH.'ra.key');
@@ -148,5 +149,35 @@ class RecordsAuditEventsTest extends TestCase
         // Doubled separator collapsed; the homedir is NOT prepended again.
         $this->assertSame('/clientA/x.pdf', $events[0]['path']);
         $this->assertSame('overwritten', $events[0]['detail']);
+    }
+
+    public function testUnsetActiveHomedirFallsBackToBareRootWithoutFataling()
+    {
+        // If a future code path reaches recordAudit before the active homedir is
+        // resolved, the isset() guard must degrade to a bare root path, not fatal.
+        $audit = $this->makeAudit();
+        $auth = new class() {
+            public function user()
+            {
+                return null;
+            }
+
+            public function getGuest(): User
+            {
+                $u = new User();
+                $u->setUsername('guest');
+                $u->setRole('guest');
+
+                return $u;
+            }
+        };
+
+        $harness = $this->harness($auth);
+        $harness->resolvedActiveHomedir = null;
+        $harness->fireRelative($this->request('9.9.9.9'), $audit);
+
+        $events = $audit->query();
+        $this->assertCount(1, $events);
+        $this->assertSame('/return.pdf', $events[0]['path']);
     }
 }

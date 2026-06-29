@@ -6,8 +6,12 @@ currentMenu: install
 You can use the [official docker image](https://hub.docker.com/r/filegator/filegator) based on [this Dockerfile](https://github.com/filegator/filegator/blob/master/Dockerfile)
 ```
 docker run -p 8080:8080 -d filegator/filegator
-visit: http://127.0.0.1:8080 login as admin/admin123
+visit: http://127.0.0.1:8080 and log in as admin
 ```
+On first run a random admin password is generated and written to
+`private/INITIAL_ADMIN_PASSWORD.txt` (retrieve it with
+`docker exec <container> cat private/INITIAL_ADMIN_PASSWORD.txt`). Log in, change
+it, then delete that file.
 
 ## Minimum Requirements
 - PHP 8.1+ (with php-zip extension)
@@ -21,8 +25,8 @@ Precompiled build is created for non-developers. In this version, the frontend (
 - Make sure your webserver can read and write to `filegator/repository/` and `filegator/private/` folders
 - Set the website document root to `filegator/dist/` directory. This is also known as 'public' folder
 - Visit web page, if something goes wrong check `filegator/private/logs/app.log`
-- Login with default credentials `admin/admin123`
-- Change default admin's password
+- Log in as `admin`; the first-run password was generated and saved to `filegator/private/INITIAL_ADMIN_PASSWORD.txt`
+- Change the admin password, then delete `private/INITIAL_ADMIN_PASSWORD.txt`
 
 NOTE: For security reasons `filegator/dist` is the ONLY folder you want to be exposed through the web. Everything else should be outside of your web root, this way people can’t access any of your important files through the browser. If you run the script from the root folder, you will see the message **'Development mode'** as a security warning.
 

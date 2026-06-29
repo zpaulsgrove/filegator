@@ -101,8 +101,12 @@ Check out [the official docker image](https://hub.docker.com/r/filegator/filegat
 Docker quick start:
 ```
 docker run -p 8080:8080 -d filegator/filegator
-visit: http://127.0.0.1:8080 login as admin/admin123
+visit: http://127.0.0.1:8080 and log in as admin
 ```
+On first run a random admin password is generated and written to
+`private/INITIAL_ADMIN_PASSWORD.txt`. Retrieve it with
+`docker exec <container> cat private/INITIAL_ADMIN_PASSWORD.txt`, then log in and
+change it.
 
 ## Download & Installation
 See [install instructions](https://docs.filegator.io/install.html). Get $100 in ([server credits here](https://m.do.co/c/93994ebda78d)) so you can play around.
@@ -115,7 +119,7 @@ git clone https://github.com/filegator/filegator.git
 cd filegator
 docker compose -f docker-compose-dev.yml up
 ```
-Once everything is ready visit: [http://localhost:8080](http://localhost:8080) and login as admin/admin123, Ctrl+c to stop.
+Once everything is ready visit: [http://localhost:8080](http://localhost:8080) and log in as admin (first-run password is in `private/INITIAL_ADMIN_PASSWORD.txt`), Ctrl+c to stop.
 
 See `docker-compose-dev.yml` for more informations about configurations and dependencies.
 
@@ -134,7 +138,7 @@ npm install
 npm run build
 npm run serve
 ```
-Once everything is ready visit: [http://localhost:8080](http://localhost:8080) and login as admin/admin123
+Once everything is ready visit: [http://localhost:8080](http://localhost:8080) and log in as admin (first-run password is in `private/INITIAL_ADMIN_PASSWORD.txt`)
 
 
 ## Run tests & static analysis

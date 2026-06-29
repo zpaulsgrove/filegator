@@ -1,5 +1,6 @@
 /tmp
 /users.json
+/INITIAL_ADMIN_PASSWORD.txt
 /password_resets.json
 /mfa_encryption.key
 /audit_state.json

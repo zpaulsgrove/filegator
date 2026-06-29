@@ -40,11 +40,63 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
 
     public function init(array $config = [])
     {
-        if (! file_exists($config['file'])) {
-            copy($config['file'].'.blank', $config['file']);
+        $this->file = $config['file'];
+
+        if (! file_exists($this->file)) {
+            copy($this->file.'.blank', $this->file);
+            // The shipped users.json.blank carries a well-known default admin
+            // password (documented publicly), which is a default-credentials
+            // risk if an operator deploys and forgets to change it (CWE-1392).
+            // On first-run seeding ONLY, replace it with a strong random
+            // password and surface it once. Never runs against an existing file.
+            $this->randomizeSeededAdminPassword();
+        }
+    }
+
+    /**
+     * Give the freshly-seeded default admin a random password and write the
+     * plaintext once to a protected file next to users.json so the operator can
+     * retrieve it and then rotate it. If the password cannot be surfaced (write
+     * fails), the seeded default is left untouched so the operator is not locked
+     * out — failing open here is a usability, not a security, trade-off because
+     * it only affects brand-new installs the operator is actively setting up.
+     */
+    protected function randomizeSeededAdminPassword(): void
+    {
+        $users = $this->getUsers();
+
+        $adminUsername = null;
+        $generated = null;
+        foreach ($users as &$u) {
+            if (($u['role'] ?? '') === 'admin' && ! empty($u['password'])) {
+                $adminUsername = $u['username'] ?? 'admin';
+                $generated = bin2hex(random_bytes(12)); // 24 hex chars
+                $u['password'] = $this->hashPassword($generated);
+                break;
+            }
+        }
+        unset($u);
+
+        if ($generated === null) {
+            return; // nothing to harden
         }
 
-        $this->file = $config['file'];
+        $note = "FileGator generated a random password for the default admin "
+            ."account on first run.\n\n"
+            ."Username: ".$adminUsername."\n"
+            ."Password: ".$generated."\n\n"
+            ."Log in, change this password immediately, then delete this file.\n";
+
+        $passwordFile = dirname($this->file).'/INITIAL_ADMIN_PASSWORD.txt';
+
+        // Surface the password BEFORE persisting the new hash. If we cannot, keep
+        // the seeded default rather than locking the operator out.
+        if (@file_put_contents($passwordFile, $note, LOCK_EX) === false) {
+            return;
+        }
+        @chmod($passwordFile, 0600);
+
+        $this->saveUsers($users);
     }
 
     public function user(): ?User

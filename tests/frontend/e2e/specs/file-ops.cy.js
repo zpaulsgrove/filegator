@@ -23,7 +23,6 @@ describe('File operations', () => {
   // creates folders now; file fixtures come from cy.createFile (API + reload).
   function createFolder(name) {
     cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type(name)
     cy.get('.dialog').contains('button', 'Create').click()
   }

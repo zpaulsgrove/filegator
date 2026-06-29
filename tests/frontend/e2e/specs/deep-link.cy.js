@@ -29,7 +29,6 @@ describe('Deep-link / folder restoration', () => {
 
     // Create a subdirectory via the UI new-menu.
     cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type('sub')
     cy.get('.dialog').contains('button', 'Create').click()
 
@@ -147,7 +146,6 @@ describe('Deep-link / folder restoration', () => {
     // self-describing. vue-router percent-encodes the slashes, so assert on
     // the encoding-agnostic substrings.
     cy.get('[data-test="new-menu"]').click()
-    cy.get('[data-test="create-folder"]').click()
     cy.get('.dialog input').clear().type('deep')
     cy.get('.dialog').contains('button', 'Create').click()
     cy.contains('.file-row a.name', 'deep').click()

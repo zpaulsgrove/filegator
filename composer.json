@@ -22,7 +22,7 @@
         "rakit/validation": "^1.1",
         "league/flysystem": "^1.1",
         "league/flysystem-ziparchive": "^1.0",
-        "spomky-labs/otphp": "^11.2",
+        "spomky-labs/otphp": "^11.4.3",
         "symfony/mailer": "^5.4",
         "symfony/mime": "^5.4",
         "symfony/postmark-mailer": "^5.4",

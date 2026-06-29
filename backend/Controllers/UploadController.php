@@ -107,15 +107,16 @@ class UploadController
 
         $this->tmpfs->write($prefix.$file_name.'.part'.$chunk_number, $stream);
 
-        // check if all the parts present, and create the final destination file.
-        // Count ONLY real chunk parts: the glob $prefix.'*' also matches the
-        // '_error' trap and a leftover 'assembled' scratch file from a crashed
-        // assembly. Summing those could push $chunks_size past $total_size while
-        // actual parts are still missing, triggering a premature (truncated)
-        // assembly.
+        // Count ONLY this upload's chunk parts. The glob $prefix.'*' also
+        // matches the shared '_error' trap, the 'assembled' scratch, and — if a
+        // client reuses one identifier across filenames — ANOTHER file's parts.
+        // Summing any of those could push $chunks_size past $total_size while
+        // this file's parts are still missing, triggering a premature/false
+        // assembly (or a false 'Missing chunk' that wipes a concurrent upload).
+        $file_part_prefix = $this->tmpfs->sanitizeFilename($prefix.$file_name.'.part');
         $chunks_size = 0;
         foreach ($this->tmpfs->findAll($prefix.'*') as $chunk) {
-            if (strpos($chunk['name'], '.part') === false) {
+            if (strpos($chunk['name'], $file_part_prefix) !== 0) {
                 continue;
             }
             $chunks_size += $chunk['size'];
@@ -123,9 +124,7 @@ class UploadController
 
         // file too big, cleanup to protect server, set error trap
         if ($chunks_size > $this->config->get('frontend_config.upload_max_size')) {
-            foreach ($this->tmpfs->findAll($prefix.'*') as $tmp_chunk) {
-                $this->tmpfs->remove($tmp_chunk['name']);
-            }
+            $this->removeFileChunks($prefix, $file_name);
             $this->tmpfs->write($prefix.'_error', '');
 
             return $response->json('Chunk too big', 422);
@@ -149,9 +148,9 @@ class UploadController
                 // file_put_contents($path, false) writes nothing — silently
                 // storing a truncated file. Abort and clean up instead.
                 if (! $this->tmpfs->exists($prefix.$file_name.'.part'.$i)) {
-                    foreach ($this->tmpfs->findAll($prefix.'*') as $tmp_chunk) {
-                        $this->tmpfs->remove($tmp_chunk['name']);
-                    }
+                    // Remove only THIS file's parts — a different filename's
+                    // parts under the same identifier belong to another upload.
+                    $this->removeFileChunks($prefix, $file_name);
 
                     return $response->json('Missing chunk', 422);
                 }
@@ -166,11 +165,9 @@ class UploadController
             $store_name = $this->tmpfs->sanitizeFilename($file_name);
             $res = $this->storage->store($destination, $store_name, $final['stream'], $overwrite_on_upload);
 
-            // cleanup
+            // cleanup: this file's parts plus its assembly scratch only.
             $this->tmpfs->remove($assembled);
-            foreach ($this->tmpfs->findAll($prefix.'*') as $expired_chunk) {
-                $this->tmpfs->remove($expired_chunk['name']);
-            }
+            $this->removeFileChunks($prefix, $file_name);
 
             if ($res !== false) {
                 // $res is the actual stored path (post collision-rename).
@@ -182,5 +179,20 @@ class UploadController
         }
 
         return $response->json('Uploaded');
+    }
+
+    /**
+     * Remove the chunk parts for a single ($prefix, $file_name) upload, leaving
+     * any other filename's parts under the same identifier untouched. Matches
+     * the sanitized name the parts were written under.
+     */
+    private function removeFileChunks(string $prefix, string $file_name): void
+    {
+        $needle = $this->tmpfs->sanitizeFilename($prefix.$file_name.'.part');
+        foreach ($this->tmpfs->findAll($prefix.'*') as $chunk) {
+            if (strpos($chunk['name'], $needle) === 0) {
+                $this->tmpfs->remove($chunk['name']);
+            }
+        }
     }
 }

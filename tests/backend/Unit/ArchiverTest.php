@@ -243,6 +243,49 @@ class ArchiverTest extends TestCase
         $this->assertTrue($storage->fileExists('/dest/folder/preexisting.txt'));
     }
 
+    public function testUncompressHandlesZipWithoutExplicitDirEntries()
+    {
+        $storage = new Filesystem();
+        $storage->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new MemoryAdapter();
+            },
+        ]);
+
+        // Build a zip containing ONLY a file entry (no explicit 'folder/' dir
+        // record) — the common shape produced by many zip tools.
+        $zipPath = TEST_TMP_PATH.'nodir.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('folder/inside.txt', 'zipped');
+        $zip->close();
+
+        $zs = fopen($zipPath, 'r');
+        $storage->store('/', 'nodir.zip', $zs);
+        fclose($zs);
+
+        // Destination already contains a NON-EMPTY colliding 'folder'.
+        $storage->createDir('/', 'dest');
+        $storage->createDir('/dest', 'folder');
+        $pre = fopen('data://text/plain;base64,'.base64_encode('preexisting'), 'r');
+        $storage->store('/dest/folder', 'preexisting.txt', $pre);
+        fclose($pre);
+
+        $this->archiver->uncompress('/nodir.zip', '/dest', $storage);
+
+        // Regression: with no explicit dir entry the file used to fall back to
+        // the raw dirname and merge into the pre-existing 'folder'. Its ancestor
+        // directory must now be resolved + collision-upcounted like any other.
+        $this->assertTrue($storage->fileExists('/dest/folder (1)/inside.txt'),
+            'file without an explicit dir entry should still follow its upcounted dir');
+        $this->assertFalse($storage->fileExists('/dest/folder/inside.txt'),
+            'file must not merge into the pre-existing colliding folder');
+        $this->assertTrue($storage->fileExists('/dest/folder/preexisting.txt'));
+
+        @unlink($zipPath);
+    }
+
     public function testUncompressingArchiveFromStorage()
     {
         $storage = new Filesystem();

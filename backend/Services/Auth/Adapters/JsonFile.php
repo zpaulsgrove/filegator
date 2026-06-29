@@ -419,15 +419,32 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
     public function setEmail(string $username, ?string $email): void
     {
         $normalized = $email === null ? null : strtolower(trim($email));
-        if ($normalized !== null && $normalized !== '') {
-            foreach ($this->getUsers() as $u) {
-                if ($u['username'] != $username && isset($u['email']) && strtolower((string) $u['email']) === $normalized) {
-                    throw new \Exception('Email already in use');
+
+        // Run the dedup check AND the write under one exclusive lock so two
+        // concurrent workers can't both pass the uniqueness check against a
+        // stale snapshot and then both commit the same email.
+        $this->mutateUsers(function (array &$all_users) use ($username, $normalized) {
+            if ($normalized !== null && $normalized !== '') {
+                foreach ($all_users as $u) {
+                    if ($u['username'] != $username && isset($u['email']) && strtolower((string) $u['email']) === $normalized) {
+                        throw new \Exception('Email already in use');
+                    }
                 }
             }
-        }
-        $this->mutateUser($username, function (array &$u) use ($normalized) {
-            $u['email'] = ($normalized === '' ? null : $normalized);
+
+            $found = false;
+            foreach ($all_users as &$u) {
+                if ($u['username'] == $username) {
+                    $u['email'] = ($normalized === '' ? null : $normalized);
+                    $found = true;
+                    break;
+                }
+            }
+            unset($u);
+
+            if (! $found) {
+                throw new \Exception('User not found');
+            }
         });
     }
 
@@ -451,9 +468,9 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
      */
     protected function mutateUser(string $username, callable $mutator): void
     {
-        $fh = $this->openLocked();
-        try {
-            $all_users = $this->readLocked($fh);
+        // Single-row convenience wrapper over mutateUsers() so the locked
+        // read-modify-write cycle lives in exactly one place.
+        $this->mutateUsers(function (array &$all_users) use ($username, $mutator) {
             $found = false;
 
             foreach ($all_users as &$u) {
@@ -468,11 +485,7 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
             if (! $found) {
                 throw new \Exception('User not found');
             }
-
-            $this->writeLocked($fh, $all_users);
-        } finally {
-            $this->closeLocked($fh);
-        }
+        });
     }
 
     /**

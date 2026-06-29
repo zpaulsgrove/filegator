@@ -101,6 +101,27 @@ class MfaLockoutTest extends TestCase
         $this->assertFalse($lockout->isLocked('9.9.9.9', 'alice'));
     }
 
+    public function testLockoutWindowSlidesWhileAttackerKeepsTrying()
+    {
+        // Regression: a fixed (non-sliding) window would let a non-stop attacker
+        // get a fresh burst every timeout. Each failure must refresh the window.
+        $lockout = $this->makeLockout(2, 2); // 2 attempts, 2s timeout
+
+        $lockout->recordFailure('1.1.1.1', 'alice');
+        $lockout->recordFailure('1.1.1.1', 'alice');
+        $this->assertTrue($lockout->isLocked('1.1.1.1', 'alice'));
+
+        // Keep hammering past the cap.
+        sleep(1);
+        $lockout->recordFailure('1.1.1.1', 'alice'); // must refresh the window
+        sleep(1);
+
+        // ~2s elapsed since the cap-reaching failure (>= timeout) but only ~1s
+        // since the last failure — a sliding window keeps alice locked. A fixed
+        // window (counter frozen at the cap) would have lapsed here.
+        $this->assertTrue($lockout->isLocked('1.1.1.1', 'alice'));
+    }
+
     public function testClearForUsernameRemovesOnlyUsernameCounter()
     {
         $lockout = $this->makeLockout(2, 60);

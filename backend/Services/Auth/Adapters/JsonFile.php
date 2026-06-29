@@ -172,80 +172,95 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
 
     public function update($username, User $user, $password = ''): User
     {
-        $all_users = $this->getUsers();
-
-        if ($username != $user->getUsername() && $this->find($user->getUsername())) {
-            throw new \Exception('Username already taken');
-        }
-
-        foreach ($all_users as &$u) {
-            if ($u['username'] == $username) {
-                $u['username'] = $user->getUsername();
-                $u['name'] = $user->getName();
-                $u['role'] = $user->getRole();
-                // Lazy migration: drop the legacy `homedir` scalar on the
-                // same row, writing the new `homedirs` array. Any row that
-                // gets touched after deploy ends up in the new shape.
-                $u['homedirs'] = $user->getHomeDirs();
-                unset($u['homedir']);
-                $u['permissions'] = $user->getPermissions(true);
-
-                if ($password) {
-                    $u['password'] = $this->hashPassword($password);
+        // Run the read-modify-write under the same exclusive lock as
+        // mutateUser() so this rename cannot clobber a concurrent MFA/email
+        // mutation (or vice versa). The uniqueness check is evaluated against
+        // the locked snapshot rather than an unlocked find().
+        $this->mutateUsers(function (array &$all_users) use ($username, $user, $password) {
+            if ($username != $user->getUsername()) {
+                foreach ($all_users as $u) {
+                    if ($u['username'] == $user->getUsername()) {
+                        throw new \Exception('Username already taken');
+                    }
                 }
-
-                $this->saveUsers($all_users);
-
-                return $this->find($user->getUsername()) ?: $user;
             }
-        }
 
-        throw new \Exception('User not found');
+            $found = false;
+            foreach ($all_users as &$u) {
+                if ($u['username'] == $username) {
+                    $u['username'] = $user->getUsername();
+                    $u['name'] = $user->getName();
+                    $u['role'] = $user->getRole();
+                    // Lazy migration: drop the legacy `homedir` scalar on the
+                    // same row, writing the new `homedirs` array. Any row that
+                    // gets touched after deploy ends up in the new shape.
+                    $u['homedirs'] = $user->getHomeDirs();
+                    unset($u['homedir']);
+                    $u['permissions'] = $user->getPermissions(true);
+
+                    if ($password) {
+                        $u['password'] = $this->hashPassword($password);
+                    }
+
+                    $found = true;
+                    break;
+                }
+            }
+            unset($u);
+
+            if (! $found) {
+                throw new \Exception('User not found');
+            }
+        });
+
+        return $this->find($user->getUsername()) ?: $user;
     }
 
     public function add(User $user, $password): User
     {
-        if ($this->find($user->getUsername())) {
-            throw new \Exception('Username already taken');
-        }
+        $this->mutateUsers(function (array &$all_users) use ($user, $password) {
+            foreach ($all_users as $u) {
+                if ($u['username'] == $user->getUsername()) {
+                    throw new \Exception('Username already taken');
+                }
+            }
 
-        $all_users = $this->getUsers();
-
-        $all_users[] = [
-            'username' => $user->getUsername(),
-            'name' => $user->getName(),
-            'role' => $user->getRole(),
-            // New rows always use the `homedirs` array shape — no legacy
-            // `homedir` key written, even for single-folder users.
-            'homedirs' => $user->getHomeDirs(),
-            'permissions' => $user->getPermissions(true),
-            'password' => $this->hashPassword($password),
-            'email' => null,
-            'mfa_enabled' => false,
-            'mfa_secret' => null,
-            'mfa_backup_codes' => null,
-            'mfa_enrolled_at' => null,
-        ];
-
-        $this->saveUsers($all_users);
+            $all_users[] = [
+                'username' => $user->getUsername(),
+                'name' => $user->getName(),
+                'role' => $user->getRole(),
+                // New rows always use the `homedirs` array shape — no legacy
+                // `homedir` key written, even for single-folder users.
+                'homedirs' => $user->getHomeDirs(),
+                'permissions' => $user->getPermissions(true),
+                'password' => $this->hashPassword($password),
+                'email' => null,
+                'mfa_enabled' => false,
+                'mfa_secret' => null,
+                'mfa_backup_codes' => null,
+                'mfa_enrolled_at' => null,
+            ];
+        });
 
         return $this->find($user->getUsername()) ?: $user;
     }
 
     public function delete(User $user)
     {
-        $all_users = $this->getUsers();
+        return $this->mutateUsers(function (array &$all_users) use ($user) {
+            foreach ($all_users as $key => $u) {
+                if ($u['username'] == $user->getUsername()) {
+                    unset($all_users[$key]);
+                    // Reindex so the JSON re-encodes as an array, not an
+                    // object with a gap in its integer keys.
+                    $all_users = array_values($all_users);
 
-        foreach ($all_users as $key => $u) {
-            if ($u['username'] == $user->getUsername()) {
-                unset($all_users[$key]);
-                $this->saveUsers($all_users);
-
-                return true;
+                    return true;
+                }
             }
-        }
 
-        throw new \Exception('User not found');
+            throw new \Exception('User not found');
+        });
     }
 
     public function find($username): ?User
@@ -455,6 +470,32 @@ class JsonFile implements Service, AuthInterface, MfaCapableInterface, PasswordR
             }
 
             $this->writeLocked($fh, $all_users);
+        } finally {
+            $this->closeLocked($fh);
+        }
+    }
+
+    /**
+     * Atomic read-modify-write across the whole users array.
+     *
+     * Same locking guarantee as mutateUser(), but the mutator receives the
+     * full array by reference so multi-row operations (add / delete / rename
+     * with uniqueness checks) are serialized against every other locked write.
+     * The mutator's return value is propagated to the caller; if it throws,
+     * the lock is released and nothing is written.
+     *
+     * @param callable $mutator function (array &$all_users): mixed
+     * @return mixed the mutator's return value
+     */
+    protected function mutateUsers(callable $mutator)
+    {
+        $fh = $this->openLocked();
+        try {
+            $all_users = $this->readLocked($fh);
+            $result = $mutator($all_users);
+            $this->writeLocked($fh, $all_users);
+
+            return $result;
         } finally {
             $this->closeLocked($fh);
         }

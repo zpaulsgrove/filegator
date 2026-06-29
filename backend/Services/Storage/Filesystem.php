@@ -235,8 +235,29 @@ class Filesystem implements Service
             return false;
         }
 
-        $this->storage->delete($destination);
-        $this->storage->rename($temp, $destination);
+        // Flysystem's rename() refuses an existing target, so the original must
+        // be removed first. If the delete fails, abort while the original and
+        // the new bytes are both still intact rather than attempting a rename
+        // that is guaranteed to fail.
+        if (! $this->storage->delete($destination)) {
+            if ($this->storage->has($temp)) {
+                $this->storage->delete($temp);
+            }
+
+            return false;
+        }
+
+        // A failed rename would otherwise leave the destination missing and the
+        // new bytes stranded in the temp file while store() falsely reported
+        // success. Clean up the temp sibling and surface the failure so callers
+        // (and the audit log) don't record a phantom save.
+        if (! $this->storage->rename($temp, $destination)) {
+            if ($this->storage->has($temp)) {
+                $this->storage->delete($temp);
+            }
+
+            return false;
+        }
 
         return $destination;
     }

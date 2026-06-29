@@ -66,6 +66,20 @@ class MockUsers extends JsonFile implements Service, AuthInterface
         $this->saveUsers($all_users);
     }
 
+    /**
+     * Static-array counterpart to JsonFile::mutateUsers(). Skips the flock RMW
+     * and mutates the in-memory array directly. The mutator's return value is
+     * propagated; a throw leaves the store unchanged (write is skipped).
+     */
+    protected function mutateUsers(callable $mutator)
+    {
+        $all_users = $this->getUsers();
+        $result = $mutator($all_users);
+        $this->saveUsers($all_users);
+
+        return $result;
+    }
+
     private function addMockUsers()
     {
         $guest = new User();

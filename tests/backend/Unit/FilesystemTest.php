@@ -14,6 +14,7 @@ use Exception;
 use Filegator\Services\Storage\Filesystem;
 use League\Flysystem\Adapter\Local;
 use League\Flysystem\Memory\MemoryAdapter;
+use Tests\Fakes\FailingRenameLocal;
 use Tests\Fakes\FailingWriteLocal;
 use Tests\TestCase;
 
@@ -369,6 +370,39 @@ class FilesystemTest extends TestCase
         $this->assertEquals('important data', stream_get_contents($read['stream']));
 
         // No half-written temp file is left lying around in the folder.
+        $listing = json_decode(json_encode($this->storage->getDirectoryCollection('/')), true);
+        foreach ($listing['files'] as $item) {
+            $this->assertStringNotContainsString('.filegator-tmp.', (string) $item['name']);
+        }
+    }
+
+    public function testFailedRenameOnOverwriteReportsFailureNotPhantomSuccess()
+    {
+        // Regression: the overwrite branch ran delete()+rename() without
+        // checking the rename result and unconditionally returned the
+        // destination path, so a failed final move was reported as success
+        // while the destination was left missing and the new bytes stranded.
+        $resource = fopen('data://text/plain;base64,'.base64_encode('important data'), 'r');
+        $this->storage->store('/', 'singletone.txt', $resource);
+        fclose($resource);
+
+        // A second Filesystem rooted at the SAME tree whose final rename fails.
+        $failing = new Filesystem();
+        $failing->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new FailingRenameLocal(TEST_REPOSITORY);
+            },
+        ]);
+
+        $resource = fopen('data://text/plain;base64,'.base64_encode('new content'), 'r');
+        $ret = $failing->store('/', 'singletone.txt', $resource, true);
+        fclose($resource);
+
+        // The overwrite must report failure rather than a phantom success.
+        $this->assertFalse($ret);
+
+        // No half-moved temp file is left lying around in the folder.
         $listing = json_decode(json_encode($this->storage->getDirectoryCollection('/')), true);
         foreach ($listing['files'] as $item) {
             $this->assertStringNotContainsString('.filegator-tmp.', (string) $item['name']);

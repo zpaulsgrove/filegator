@@ -21,9 +21,15 @@
             // without an LDAP/WP runtime). Paths are relative to the source
             // directories above, so these resolve under backend/Services/Auth.
             "Adapters/LDAP.php",
-            "Adapters/WPAuth.php"
-            // NB: AuditMailer.php and WeeklyDigest.php are now unit-tested
-            // (AuditMailerTest / WeeklyDigestTest) and have re-entered the gate.
+            "Adapters/WPAuth.php",
+            // AuditMailer/WeeklyDigest now HAVE fast unit tests
+            // (AuditMailerTest/WeeklyDigestTest), but they are also covered by
+            // the slow argon2/sodium feature tests (AuditAlertsTest). Under
+            // --only-covering-test-cases every mutant in them drags in that slow
+            // suite, making the weekly mutation job impractically long, so they
+            // stay excluded from the gate — the unit tests are the real value.
+            "AuditMailer.php",
+            "WeeklyDigest.php"
         ]
     },
     "mutators": {

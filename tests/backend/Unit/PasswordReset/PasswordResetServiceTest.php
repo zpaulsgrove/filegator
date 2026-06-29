@@ -57,7 +57,8 @@ class PasswordResetServiceTest extends TestCase
             new InMemoryMailer(),
             $this->tmpfs,
             $logger,
-            new Config($config)
+            // Disable the anti-enumeration timing floor so unit tests don't sleep.
+            new Config(array_merge(['password_reset_timing_floor_ms' => 0], $config))
         );
         $service->init(array_merge([
             'token_file' => TEST_TMP_PATH.'pr_tokens.json',

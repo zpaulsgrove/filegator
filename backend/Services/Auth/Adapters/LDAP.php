@@ -196,9 +196,13 @@ class LDAP implements Service, AuthInterface
             throw new \Exception('Cannot Bind to LDAP server: Wrong credentials?');
 
         // search the LDAP server for users
+        // Escape the (attacker-controlled) username before it is interpolated
+        // into the search filter, otherwise LDAP metacharacters ( ) * \ & |
+        // would let a crafted login username alter the filter structure
+        // (CWE-90 LDAP injection).
         $filter = $this->ldap_filter;
         if (!empty($username))
-            $filter = '(&' . $filter . '(' . $this->ldap_userFieldMapping['username'] . '=' . $username . '))';
+            $filter = '(&' . $filter . '(' . $this->ldap_userFieldMapping['username'] . '=' . ldap_escape($username, '', LDAP_ESCAPE_FILTER) . '))';
 
         $ldapSearch = @ldap_search($ldapConn, $this->ldap_baseDN, $filter, $this->ldap_attributes);
 

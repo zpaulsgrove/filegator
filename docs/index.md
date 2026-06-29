@@ -43,7 +43,7 @@ Check out [the official docker image](https://hub.docker.com/r/filegator/filegat
 Docker quick start:
 ```
 docker run -p 8080:8080 -d filegator/filegator
-visit: http://127.0.0.1:8080 login as admin/admin123
+visit: http://127.0.0.1:8080 and log in as admin (first-run password in private/INITIAL_ADMIN_PASSWORD.txt)
 ```
 
 ## Limitations

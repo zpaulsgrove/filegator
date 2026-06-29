@@ -26,6 +26,7 @@ return [
     'password_reset_token_ttl' => 3600,
     'password_reset_max_per_hour_per_ip' => 3,
     'password_reset_max_per_day_per_email' => 3,
+    'password_reset_timing_floor_ms' => 0, // no anti-enumeration sleep in tests
 
     'services' => [
         'Filegator\Services\Logger\LoggerInterface' => [

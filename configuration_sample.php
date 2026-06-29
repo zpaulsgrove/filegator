@@ -63,7 +63,15 @@ return [
 
                     return new \Symfony\Component\HttpFoundation\Session\Storage\NativeSessionStorage([
                             "cookie_samesite" => "Lax",
-                            "cookie_secure" => null,
+                            // Emit the Secure flag whenever the request arrives over
+                            // HTTPS — directly, or via a TLS-terminating proxy that
+                            // forwards X-Forwarded-Proto. Computed (rather than a hard
+                            // true) so plain-HTTP demos keep working while the session
+                            // cookie is never sent in cleartext on a TLS deployment.
+                            "cookie_secure" => (
+                                (! empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+                                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https')
+                            ),
                             "cookie_httponly" => true,
                             "gc_maxlifetime" => 3600, // idle session timeout in seconds (60 min); resets on each request
                         ], $handler);

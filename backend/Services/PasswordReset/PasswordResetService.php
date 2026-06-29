@@ -94,40 +94,67 @@ class PasswordResetService implements Service
             return;
         }
 
-        $resettable = $this->resettable();
-        $user = $resettable->findByEmail($email);
-
-        if (! $user) {
-            // Pad timing slightly to flatten user-existence signal.
-            usleep(random_int(50000, 150000));
-            $this->logger->log('Password reset requested for unknown email (ip='.$ip.')');
-            return;
-        }
-
-        $token = bin2hex(random_bytes(32));
-        $hash = hash('sha256', $token);
-        $ttl = (int) $this->config->get('password_reset_token_ttl', 3600);
+        // The "email exists" path performs a synchronous SMTP send while the
+        // "unknown email" path returns immediately, so response latency leaks
+        // account existence even though the HTTP body is identical (CWE-204).
+        // Pad BOTH paths to a common floor measured from here so the send time
+        // is no longer observable. Configurable; 0 disables (used in tests).
+        $startedAt = microtime(true);
+        $floorMs = (int) $this->config->get('password_reset_timing_floor_ms', 1000);
 
         try {
-            $this->store->add($user->getUsername(), $hash, $ttl, $ip);
-        } catch (\Throwable $e) {
-            $this->logger->log('Password reset token persist failed: '.$e->getMessage());
+            $resettable = $this->resettable();
+            $user = $resettable->findByEmail($email);
+
+            if (! $user) {
+                $this->logger->log('Password reset requested for unknown email (ip='.$ip.')');
+                return;
+            }
+
+            $token = bin2hex(random_bytes(32));
+            $hash = hash('sha256', $token);
+            $ttl = (int) $this->config->get('password_reset_token_ttl', 3600);
+
+            try {
+                $this->store->add($user->getUsername(), $hash, $ttl, $ip);
+            } catch (\Throwable $e) {
+                $this->logger->log('Password reset token persist failed: '.$e->getMessage());
+                return;
+            }
+
+            $resetUrl = $this->buildResetUrl($token);
+            $appName = (string) ($this->config->get('frontend_config.app_name') ?: 'FileGator');
+            $rendered = PasswordResetTemplate::render($resetUrl, $user->getUsername(), (int) ceil($ttl / 60), $appName, $this->branding);
+
+            $ok = $this->mailer->send($email, $this->resetSubject, $rendered['text'], $rendered['html']);
+
+            $this->logger->log(sprintf(
+                'Password reset email %s for user=%s token_hash_prefix=%s ip=%s',
+                $ok ? 'sent' : 'failed',
+                $user->getUsername(),
+                substr($hash, 0, 8),
+                $ip
+            ));
+        } finally {
+            $this->padToTimingFloor($startedAt, $floorMs);
+        }
+    }
+
+    /**
+     * Sleep until at least $floorMs has elapsed since $startedAt, plus a small
+     * random jitter so the floor itself is not an exact constant. No-op when
+     * the floor is already exceeded or disabled (<= 0).
+     */
+    private function padToTimingFloor(float $startedAt, int $floorMs): void
+    {
+        if ($floorMs <= 0) {
             return;
         }
 
-        $resetUrl = $this->buildResetUrl($token);
-        $appName = (string) ($this->config->get('frontend_config.app_name') ?: 'FileGator');
-        $rendered = PasswordResetTemplate::render($resetUrl, $user->getUsername(), (int) ceil($ttl / 60), $appName, $this->branding);
-
-        $ok = $this->mailer->send($email, $this->resetSubject, $rendered['text'], $rendered['html']);
-
-        $this->logger->log(sprintf(
-            'Password reset email %s for user=%s token_hash_prefix=%s ip=%s',
-            $ok ? 'sent' : 'failed',
-            $user->getUsername(),
-            substr($hash, 0, 8),
-            $ip
-        ));
+        $remainingUs = (int) ($floorMs * 1000 - (microtime(true) - $startedAt) * 1e6);
+        if ($remainingUs > 0) {
+            usleep($remainingUs + random_int(0, 50000));
+        }
     }
 
     public function validateToken(string $token): ?array

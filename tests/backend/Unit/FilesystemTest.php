@@ -14,6 +14,7 @@ use Exception;
 use Filegator\Services\Storage\Filesystem;
 use League\Flysystem\Adapter\Local;
 use League\Flysystem\Memory\MemoryAdapter;
+use Tests\Fakes\FailingWriteLocal;
 use Tests\TestCase;
 
 /**
@@ -336,6 +337,42 @@ class FilesystemTest extends TestCase
         // first file is overwritten
         $ret = $this->storage->readStream('singletone.txt');
         $this->assertEquals('croissant', stream_get_contents($ret['stream']));
+    }
+
+    public function testFailedOverwriteLeavesTheOriginalFileIntact()
+    {
+        // Original document on disk (written via the real Local adapter).
+        $resource = fopen('data://text/plain;base64,'.base64_encode('important data'), 'r');
+        $this->storage->store('/', 'singletone.txt', $resource);
+        fclose($resource);
+
+        // A second Filesystem rooted at the SAME tree, but whose writes fail
+        // partway — the disk-full / dropped-connection scenario from issue #57.
+        $failing = new Filesystem();
+        $failing->init([
+            'separator' => '/',
+            'adapter' => function () {
+                return new FailingWriteLocal(TEST_REPOSITORY);
+            },
+        ]);
+
+        $resource = fopen('data://text/plain;base64,'.base64_encode('new content'), 'r');
+        $ret = $failing->store('/', 'singletone.txt', $resource, true);
+        fclose($resource);
+
+        // The overwrite reports failure...
+        $this->assertFalse($ret);
+
+        // ...and crucially the ORIGINAL content survives (historically the
+        // delete-then-write order destroyed it before the failed write).
+        $read = $this->storage->readStream('singletone.txt');
+        $this->assertEquals('important data', stream_get_contents($read['stream']));
+
+        // No half-written temp file is left lying around in the folder.
+        $listing = json_decode(json_encode($this->storage->getDirectoryCollection('/')), true);
+        foreach ($listing['files'] as $item) {
+            $this->assertStringNotContainsString('.filegator-tmp.', (string) $item['name']);
+        }
     }
 
     public function testStoringFileWithTheSameNameUpcountsSecondFilenameUsingPathPrefix()

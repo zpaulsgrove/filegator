@@ -201,15 +201,44 @@ class Filesystem implements Service
     {
         $destination = $this->joinPaths($this->applyPathPrefix($path), $name);
 
-        while ($this->storage->has($destination)) {
-            if ($overwrite) {
-                $this->storage->delete($destination);
-            } else {
+        if (! $overwrite) {
+            while ($this->storage->has($destination)) {
                 $destination = $this->upcountName($destination);
             }
+
+            return $this->storage->putStream($destination, $resource) ? $destination : false;
         }
 
-        return $this->storage->putStream($destination, $resource) ? $destination : false;
+        // Overwrite-in-place. If there is nothing to clobber, write directly.
+        if (! $this->storage->has($destination)) {
+            return $this->storage->putStream($destination, $resource) ? $destination : false;
+        }
+
+        // Write the new content to a sibling temp file FIRST, so a write that
+        // fails partway (disk full, dropped SFTP connection, permission flip)
+        // cannot destroy the existing file. Only once the new bytes are safely
+        // on disk do we delete the original and move the temp into place. This
+        // shrinks the data-loss window from the whole (potentially large) write
+        // down to the delete+rename step. Flysystem's rename() refuses an
+        // existing target, so the delete must precede it. See GitHub issue #57.
+        $temp = $destination.'.filegator-tmp.'.uniqid('', true);
+        while ($this->storage->has($temp)) {
+            $temp = $destination.'.filegator-tmp.'.uniqid('', true);
+        }
+
+        if (! $this->storage->putStream($temp, $resource)) {
+            // Write failed: drop any partial temp; the original is untouched.
+            if ($this->storage->has($temp)) {
+                $this->storage->delete($temp);
+            }
+
+            return false;
+        }
+
+        $this->storage->delete($destination);
+        $this->storage->rename($temp, $destination);
+
+        return $destination;
     }
     
     /**

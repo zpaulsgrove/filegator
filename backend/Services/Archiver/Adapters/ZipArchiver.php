@@ -41,7 +41,12 @@ class ZipArchiver implements Service, ArchiverInterface
 
     public function createArchive(Storage $storage): string
     {
-        $this->uniqid = uniqid();
+        // Unpredictable id: this value is handed to the client and later used
+        // to look the archive up for download. uniqid() is microtime-derived
+        // and guessable/enumerable, which let a user fish for another user's
+        // pending archive. 16 random bytes removes that vector (ownership is
+        // also enforced in DownloadController::batchDownloadStart).
+        $this->uniqid = bin2hex(random_bytes(16));
 
         $this->archive = new Flysystem(
             new ZipAdapter($this->tmpfs->getFileLocation($this->uniqid))

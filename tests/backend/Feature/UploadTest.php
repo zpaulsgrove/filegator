@@ -456,6 +456,54 @@ class UploadTest extends TestCase
         $this->assertStringEqualsFile(TEST_REPOSITORY.'/john/ordered.txt', $part1.$part2);
     }
 
+    public function testChunkedAssemblyIsIsolatedFromCollidingScratchFile()
+    {
+        // Regression for the cross-tenant chunked-upload assembly collision.
+        // The final assembly must NOT use the bare, user-supplied filename as
+        // its shared-tmpfs scratch key, and must truncate (not append) when it
+        // starts writing. We simulate a buffer left behind under the old scheme
+        // — a file named exactly like the upload sitting in the shared tmpfs
+        // dir, as a second concurrent upload of the same name would create —
+        // and assert the stored result is exactly OUR bytes, never the stale
+        // buffer + ours.
+        $this->signIn('john@example.com', 'john123');
+
+        // Buffer a colliding/old-scheme assembly would have written to.
+        file_put_contents(TEST_TMP_PATH.'collide.txt', 'STALE-LEFTOVER-FROM-ANOTHER-UPLOAD');
+
+        $part1 = str_repeat('X', 80);
+        $part2 = str_repeat('Y', 40);
+
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableTotalChunks' => 2,
+            'resumableTotalSize' => strlen($part1) + strlen($part2),
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-COLLISION-TEST',
+            'resumableFilename' => 'collide.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, $part1);
+        fclose($fp);
+        $this->sendRequest('POST', '/upload', $data, ['file' => new UploadedFile(TEST_FILE, 'collide.txt', 'text/plain', null, true)]);
+        $this->assertOk();
+
+        $data['resumableChunkNumber'] = 2;
+        $fp = fopen(TEST_FILE, 'w');
+        fwrite($fp, $part2);
+        fclose($fp);
+        $this->sendRequest('POST', '/upload', $data, ['file' => new UploadedFile(TEST_FILE, 'collide.txt', 'text/plain', null, true)]);
+        $this->assertOk();
+
+        // The stored file is exactly our two parts — uncontaminated by the
+        // stale scratch buffer, which the old bare-filename assembly would have
+        // appended onto.
+        $this->assertStringEqualsFile(TEST_REPOSITORY.'/john/collide.txt', $part1.$part2);
+    }
+
     public function testUploadCannotTraverseOutsideHomedir()
     {
         // John (homedir /john) tries to smuggle a file into Jane's homedir by

@@ -26,6 +26,15 @@ interface TmpfsInterface
 
     public function getFileLocation(string $filename): string;
 
+    /**
+     * Normalize an untrusted name into a safe, single-component tmpfs/storage
+     * filename: reserved/control characters are replaced and the result is
+     * length-capped. Exposed so callers that decouple the scratch key from the
+     * final stored name (e.g. chunked-upload assembly) can reproduce the exact
+     * same sanitization the adapter applies internally.
+     */
+    public function sanitizeFilename(string $filename): string;
+
     public function clean(int $older_than);
 
     /**

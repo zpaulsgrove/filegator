@@ -125,16 +125,29 @@ class UploadController
 
         // if all the chunks are present, create final file and store it
         if ($chunks_size >= $total_size) {
+            // Assemble into a scratch file namespaced to THIS user + upload
+            // ($prefix already encodes username + identifier). The previous
+            // implementation assembled into the bare, user-supplied $file_name
+            // in the shared tmpfs dir, so two concurrent uploads of the same
+            // filename (e.g. two clients each uploading "report.pdf") read,
+            // wrote and deleted the same buffer — cross-tenant corruption and
+            // leakage. Truncate on the first part instead of always appending,
+            // so a stale buffer from an earlier/crashed assembly is overwritten
+            // rather than appended onto.
+            $assembled = $prefix.'assembled';
             for ($i = 1; $i <= $total_chunks; ++$i) {
                 $part = $this->tmpfs->readStream($prefix.$file_name.'.part'.$i);
-                $this->tmpfs->write($file_name, $part['stream'], true);
+                $this->tmpfs->write($assembled, $part['stream'], $i > 1);
             }
 
-            $final = $this->tmpfs->readStream($file_name);
-            $res = $this->storage->store($destination, $final['filename'], $final['stream'], $overwrite_on_upload);
+            $final = $this->tmpfs->readStream($assembled);
+            // The final name is the sanitized original filename, never the
+            // scratch key.
+            $store_name = $this->tmpfs->sanitizeFilename($file_name);
+            $res = $this->storage->store($destination, $store_name, $final['stream'], $overwrite_on_upload);
 
             // cleanup
-            $this->tmpfs->remove($file_name);
+            $this->tmpfs->remove($assembled);
             foreach ($this->tmpfs->findAll($prefix.'*') as $expired_chunk) {
                 $this->tmpfs->remove($expired_chunk['name']);
             }

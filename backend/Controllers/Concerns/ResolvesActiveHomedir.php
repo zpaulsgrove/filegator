@@ -33,6 +33,16 @@ use Filegator\Kernel\Response;
 trait ResolvesActiveHomedir
 {
     /**
+     * The homedir resolved by the most recent ensureActiveHomedir() call,
+     * captured explicitly so audit recording (RecordsAuditEvents) can build
+     * root-relative paths from a value it owns rather than reading the
+     * mutable storage path-prefix, which later code could change.
+     *
+     * @var string|null
+     */
+    protected $resolvedActiveHomedir = null;
+
+    /**
      * Validate and apply the user's active homedir to the storage prefix.
      * Returns true on success, false if the response has already been
      * populated with an error (422 / 404) — caller should `return;`.
@@ -62,6 +72,7 @@ trait ResolvesActiveHomedir
         // logic — guest auth flows aren't impacted by the multi-folder
         // refactor.
         if ($effective->isGuest()) {
+            $this->resolvedActiveHomedir = $effective->getHomeDir();
             $this->storage->setPathPrefix($effective->getHomeDir());
             return true;
         }
@@ -96,6 +107,7 @@ trait ResolvesActiveHomedir
             return false;
         }
 
+        $this->resolvedActiveHomedir = $active;
         $this->storage->setPathPrefix($active);
         return true;
     }

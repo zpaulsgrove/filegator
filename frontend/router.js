@@ -3,6 +3,7 @@ import Router from 'vue-router'
 import Browser from './views/Browser.vue'
 import Users from './views/Users.vue'
 import FolderAccess from './views/FolderAccess.vue'
+import Audit from './views/Audit.vue'
 import Login from './views/Login.vue'
 import Security from './views/Security.vue'
 import ForgotPassword from './views/ForgotPassword.vue'
@@ -69,6 +70,18 @@ const router = new Router({
       path: '/folder-access',
       name: 'folder-access',
       component: FolderAccess,
+      beforeEnter: (to, from, next) => {
+        if (store.state.user.role == 'admin') {
+          next()
+        } else {
+          next('/')
+        }
+      },
+    },
+    {
+      path: '/audit-log',
+      name: 'audit-log',
+      component: Audit,
       beforeEnter: (to, from, next) => {
         if (store.state.user.role == 'admin') {
           next()

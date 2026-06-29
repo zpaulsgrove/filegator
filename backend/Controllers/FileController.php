@@ -11,10 +11,12 @@
 namespace Filegator\Controllers;
 
 use Filegator\Config\Config;
+use Filegator\Controllers\Concerns\RecordsAuditEvents;
 use Filegator\Controllers\Concerns\ResolvesActiveHomedir;
 use Filegator\Kernel\Request;
 use Filegator\Kernel\Response;
 use Filegator\Services\Archiver\ArchiverInterface;
+use Filegator\Services\Audit\AuditLog;
 use Filegator\Services\Auth\AuthInterface;
 use Filegator\Services\Session\SessionStorageInterface as Session;
 use Filegator\Services\Storage\Filesystem;
@@ -22,6 +24,7 @@ use Filegator\Services\Storage\Filesystem;
 class FileController
 {
     use ResolvesActiveHomedir;
+    use RecordsAuditEvents;
 
     const SESSION_CWD = 'current_path';
 
@@ -79,7 +82,7 @@ class FileController
         return $response->json($content);
     }
 
-    public function createNew(Request $request, Response $response)
+    public function createNew(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -88,52 +91,74 @@ class FileController
         $path = $this->session->get(self::SESSION_CWD, $this->separator);
 
         if ($type == 'dir') {
-            $this->storage->createDir($path, $request->input('name'));
+            $dest = $this->storage->createDir($path, $name);
+            if ($dest !== false) {
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_CREATE, $dest, 'folder');
+            }
         }
         if ($type == 'file') {
-            $this->storage->createFile($path, $request->input('name'));
+            $dest = $this->storage->createFile($path, $name);
+            if ($dest !== false) {
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_CREATE, $dest);
+            }
         }
 
         return $response->json('Done');
     }
 
-    public function copyItems(Request $request, Response $response)
+    public function copyItems(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
         $items = $request->input('items', []);
         $destination = $request->input('destination', $this->separator);
 
+        $events = [];
         foreach ($items as $item) {
-            if ($item->type == 'dir') {
-                $this->storage->copyDir($item->path, $destination);
-            }
-            if ($item->type == 'file') {
-                $this->storage->copyFile($item->path, $destination);
+            $dest = $item->type == 'dir'
+                ? $this->storage->copyDir($item->path, $destination)
+                : $this->storage->copyFile($item->path, $destination);
+
+            if ($dest !== false) {
+                $events[] = [
+                    'action' => AuditLog::ACTION_COPY,
+                    'path' => $this->auditNormalize($dest),
+                    'detail' => 'from '.$this->auditGlobalPath($item->path),
+                ];
             }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
 
-    public function moveItems(Request $request, Response $response)
+    public function moveItems(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
         $items = $request->input('items', []);
         $destination = $request->input('destination', $this->separator);
 
+        $events = [];
         foreach ($items as $item) {
             $full_destination = trim($destination, $this->separator)
                     .$this->separator
                     .ltrim($item->name, $this->separator);
-            $this->storage->move($item->path, $full_destination);
+            $dest = $this->storage->move($item->path, $full_destination);
+            if ($dest !== false) {
+                $events[] = [
+                    'action' => AuditLog::ACTION_MOVE,
+                    'path' => $this->auditNormalize($dest),
+                    'detail' => 'from '.$this->auditGlobalPath($item->path),
+                ];
+            }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
 
-    public function zipItems(Request $request, Response $response, ArchiverInterface $archiver)
+    public function zipItems(Request $request, Response $response, ArchiverInterface $archiver, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -154,10 +179,14 @@ class FileController
 
         $archiver->storeArchive($destination, $name);
 
+        // The archiver exposes no success/failure signal; reaching here without
+        // an exception is the success contract we record on.
+        $this->recordAudit($request, $audit, AuditLog::ACTION_ZIP, rtrim($destination, $this->separator).$this->separator.$name);
+
         return $response->json('Done');
     }
 
-    public function unzipItem(Request $request, Response $response, ArchiverInterface $archiver)
+    public function unzipItem(Request $request, Response $response, ArchiverInterface $archiver, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -166,10 +195,12 @@ class FileController
 
         $archiver->uncompress($source, $destination, $this->storage);
 
+        $this->recordAudit($request, $audit, AuditLog::ACTION_UNZIP, $destination, 'from '.$this->auditGlobalPath($source));
+
         return $response->json('Done');
     }
 
-    public function chmodItems(Request $request, Response $response)
+    public function chmodItems(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -178,14 +209,22 @@ class FileController
         /** @var null|'all'|'folders'|'files' */
         $recursive = $request->input('recursive', null);
 
+        $events = [];
         foreach ($items as $item) {
-            $this->storage->chmod($item->path, $permissions, $recursive);
+            if ($this->storage->chmod($item->path, $permissions, $recursive)) {
+                $events[] = [
+                    'action' => AuditLog::ACTION_CHMOD,
+                    'path' => $this->auditGlobalPath($item->path),
+                    'detail' => 'mode '.$permissions,
+                ];
+            }
         }
+        $this->recordAuditBatch($request, $audit, $events);
 
         return $response->json('Done');
     }
 
-    public function renameItem(Request $request, Response $response)
+    public function renameItem(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -193,30 +232,40 @@ class FileController
         $from = $request->input('from');
         $to = $request->input('to');
 
-        $this->storage->rename($destination, $from, $to);
-
-        return $response->json('Done');
-    }
-
-    public function deleteItems(Request $request, Response $response)
-    {
-        if (! $this->ensureActiveHomedir($response)) return;
-
-        $items = $request->input('items', []);
-
-        foreach ($items as $item) {
-            if ($item->type == 'dir') {
-                $this->storage->deleteDir($item->path);
-            }
-            if ($item->type == 'file') {
-                $this->storage->deleteFile($item->path);
-            }
+        $dest = $this->storage->rename($destination, $from, $to);
+        if ($dest !== false) {
+            $fromPath = rtrim($destination, $this->separator).$this->separator.$from;
+            $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_RENAME, $dest, 'from '.$this->auditGlobalPath($fromPath));
         }
 
         return $response->json('Done');
     }
 
-    public function saveContent(Request $request, Response $response)
+    public function deleteItems(Request $request, Response $response, AuditLog $audit)
+    {
+        if (! $this->ensureActiveHomedir($response)) return;
+
+        $items = $request->input('items', []);
+
+        $events = [];
+        foreach ($items as $item) {
+            if ($item->type == 'dir') {
+                if ($this->storage->deleteDir($item->path)) {
+                    $events[] = ['action' => AuditLog::ACTION_DELETE, 'path' => $this->auditGlobalPath($item->path), 'detail' => 'folder'];
+                }
+            }
+            if ($item->type == 'file') {
+                if ($this->storage->deleteFile($item->path)) {
+                    $events[] = ['action' => AuditLog::ACTION_DELETE, 'path' => $this->auditGlobalPath($item->path), 'detail' => null];
+                }
+            }
+        }
+        $this->recordAuditBatch($request, $audit, $events);
+
+        return $response->json('Done');
+    }
+
+    public function saveContent(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -229,11 +278,18 @@ class FileController
         fwrite($stream, $content);
         rewind($stream);
 
-        $this->storage->deleteFile($path.$this->separator.$name);
-        $this->storage->store($path, $name, $stream);
+        // Overwrite in place (store() handles the delete) rather than an
+        // unconditional delete-then-store: a failed write can no longer leave
+        // the file destroyed with nothing recorded, and the audited path is
+        // the actual stored path.
+        $stored = $this->storage->store($path, $name, $stream, true);
 
         if (is_resource($stream)) {
             fclose($stream);
+        }
+
+        if ($stored !== false) {
+            $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_SAVE, $stored);
         }
 
         return $response->json('Done');

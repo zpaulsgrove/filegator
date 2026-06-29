@@ -215,7 +215,9 @@ class FilesystemTest extends TestCase
         $ret = $this->storage->store('/', 'loremfile.txt', $resource);
         fclose($resource);
 
-        $this->assertTrue($ret);
+        // store() now returns the actual stored path (or false on failure).
+        $this->assertNotFalse($ret);
+        $this->assertSame('/loremfile.txt', $ret);
 
         $this->assertFileExists(TEST_REPOSITORY.'/loremfile.txt');
     }
@@ -229,7 +231,8 @@ class FilesystemTest extends TestCase
         $ret = $this->storage->store('/sub/sub1', 'loremfile.txt', $resource);
         fclose($resource);
 
-        $this->assertTrue($ret);
+        $this->assertNotFalse($ret);
+        $this->assertSame('/sub/sub1/loremfile.txt', $ret);
 
         $this->assertFileExists(TEST_REPOSITORY.'/sub/sub1/loremfile.txt');
         $this->assertFileDoesNotExist(TEST_REPOSITORY.'/loremfile.txt');

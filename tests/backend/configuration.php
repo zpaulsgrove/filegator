@@ -145,6 +145,14 @@ return [
                 'interval_seconds' => 604800,
             ],
         ],
+        'Filegator\Services\Audit\AuditLog' => [
+            'handler' => '\Filegator\Services\Audit\AuditLog',
+            'config' => [
+                'log_file' => TEST_TMP_PATH.'audit_log.jsonl',
+                'key_path' => TEST_TMP_PATH.'audit_encryption.key',
+                'max_age_days' => 30,
+            ],
+        ],
         'Filegator\Services\Router\Router' => [
             'handler' => '\Filegator\Services\Router\Router',
             'config' => [

@@ -13,6 +13,7 @@ namespace Filegator\Controllers;
 use Filegator\Config\Config;
 use Filegator\Kernel\Request;
 use Filegator\Kernel\Response;
+use Filegator\Services\Audit\AuditLog;
 use Filegator\Services\Audit\AuditMailer;
 use Filegator\Services\Audit\WeeklyDigest;
 use Filegator\Services\Auth\AuthInterface;
@@ -192,6 +193,27 @@ class AdminController
         sort($keys);
 
         return $keys;
+    }
+
+    /**
+     * Global file-activity audit: recent write-mutations (upload, create,
+     * copy, move, rename, delete, zip, unzip, chmod, save) across ALL users
+     * and folders, newest first. Optional filters: `action`, `user`,
+     * `from`/`to` (inclusive unix-epoch bounds).
+     *
+     * Admin-only (route roles => ['admin']): the entries expose client paths
+     * and source IPs (PII), so the read is gated to administrators.
+     */
+    public function auditLog(Request $request, Response $response, AuditLog $audit)
+    {
+        return $response->json([
+            'events' => $audit->query([
+                'action' => $request->input('action'),
+                'user' => $request->input('user'),
+                'from' => $request->input('from'),
+                'to' => $request->input('to'),
+            ]),
+        ]);
     }
 
     public function storeUser(User $user, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)

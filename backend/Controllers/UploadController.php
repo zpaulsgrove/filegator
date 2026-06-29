@@ -11,9 +11,11 @@
 namespace Filegator\Controllers;
 
 use Filegator\Config\Config;
+use Filegator\Controllers\Concerns\RecordsAuditEvents;
 use Filegator\Controllers\Concerns\ResolvesActiveHomedir;
 use Filegator\Kernel\Request;
 use Filegator\Kernel\Response;
+use Filegator\Services\Audit\AuditLog;
 use Filegator\Services\Auth\AuthInterface;
 use Filegator\Services\Session\SessionStorageInterface as Session;
 use Filegator\Services\Storage\Filesystem;
@@ -22,6 +24,7 @@ use Filegator\Services\Tmpfs\TmpfsInterface;
 class UploadController
 {
     use ResolvesActiveHomedir;
+    use RecordsAuditEvents;
 
     protected $auth;
 
@@ -64,7 +67,7 @@ class UploadController
         return $response->json('Chunk does not exists', 204);
     }
 
-    public function upload(Request $request, Response $response)
+    public function upload(Request $request, Response $response, AuditLog $audit)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
@@ -136,7 +139,13 @@ class UploadController
                 $this->tmpfs->remove($expired_chunk['name']);
             }
 
-            return $res ? $response->json('Stored') : $response->json('Error storing file');
+            if ($res !== false) {
+                // $res is the actual stored path (post collision-rename).
+                $detail = $overwrite_on_upload ? 'overwritten' : null;
+                $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_UPLOAD, $res, $detail);
+            }
+
+            return $res !== false ? $response->json('Stored') : $response->json('Error storing file');
         }
 
         return $response->json('Uploaded');

@@ -381,6 +381,19 @@ return [
         'permissions' => [
         ],
     ],
+    // Admin-only. Read-only GET; the data is PII (client paths + IPs). Safe
+    // under the current prod posture (CORS off, SameSite=Lax cookies) — if
+    // CORS is ever enabled in production, read endpoints would need CSRF too.
+    [
+        'route' => [
+            'GET', '/admin/audit-log', '\Filegator\Controllers\AdminController@auditLog',
+        ],
+        'roles' => [
+            'admin',
+        ],
+        'permissions' => [
+        ],
+    ],
     [
         'route' => [
             'POST', '/storeuser', '\Filegator\Controllers\AdminController@storeUser',

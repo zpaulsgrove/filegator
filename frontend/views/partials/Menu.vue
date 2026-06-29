@@ -23,6 +23,9 @@
         <a v-if="is('admin')" class="navbar-item folder-access" data-test="nav-folder-access" @click="$router.push('/folder-access').catch(() => {})">
           {{ lang('Folder Access') }}
         </a>
+        <a v-if="is('admin')" class="navbar-item audit-log" data-test="nav-audit-log" @click="$router.push('/audit-log').catch(() => {})">
+          {{ lang('Audit Log') }}
+        </a>
         <!-- Folder switcher: visible only for multi-folder users. -->
         <b-dropdown
           v-if="hasMultipleFolders"

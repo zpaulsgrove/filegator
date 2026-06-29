@@ -157,6 +157,182 @@ class FilesTest extends TestCase
         $this->assertOk();
     }
 
+    /**
+     * Clear any prior audit log so each audit test starts from empty, and
+     * return the on-disk paths the running app writes to.
+     */
+    private function freshAuditLog(): array
+    {
+        $logFile = TEST_TMP_PATH.'audit_log.jsonl';
+        $keyPath = TEST_TMP_PATH.'audit_encryption.key';
+        @unlink($logFile);
+        @unlink($logFile.'.pruned');
+
+        return [$logFile, $keyPath];
+    }
+
+    /**
+     * Read the encrypted audit log back through a fresh service instance using
+     * the same key file the request created.
+     */
+    private function auditEvents(array $filters = []): array
+    {
+        [$logFile, $keyPath] = [TEST_TMP_PATH.'audit_log.jsonl', TEST_TMP_PATH.'audit_encryption.key'];
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init(['log_file' => $logFile, 'key_path' => $keyPath, 'max_age_days' => 30]);
+
+        return $audit->query($filters);
+    }
+
+    public function testDeleteRecordsAuditWithRootRelativePath()
+    {
+        $this->freshAuditLog();
+        $username = 'john@example.com';
+        $this->signIn($username, 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/john.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [
+                ['type' => 'file', 'path' => '/john.txt', 'name' => 'john.txt', 'time' => $this->timestamp],
+            ],
+        ]);
+        $this->assertOk();
+
+        $events = $this->auditEvents();
+        $this->assertCount(1, $events);
+        $this->assertSame('delete', $events[0]['action']);
+        $this->assertSame($username, $events[0]['user']);
+        // John's homedir is /john, so his homedir-relative '/john.txt' is
+        // recorded in root-relative space — not ambiguous across users.
+        $this->assertSame('/john/john.txt', $events[0]['path']);
+    }
+
+    public function testAuditRecordsActualUpcountedPathOnCollision()
+    {
+        $this->freshAuditLog();
+        $this->signIn('john@example.com', 'john123');
+        mkdir(TEST_REPOSITORY.'/john');
+
+        // Create the same name twice; the second collides and the storage
+        // layer upcounts it to 'dup (1).txt'. The audit must record the ACTUAL
+        // stored name, not the requested one.
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'dup.txt']);
+        $this->assertOk();
+        $this->sendRequest('POST', '/createnew', ['type' => 'file', 'name' => 'dup.txt']);
+        $this->assertOk();
+
+        $paths = array_column($this->auditEvents(['action' => 'create']), 'path');
+        $this->assertContains('/john/dup.txt', $paths);
+        $this->assertContains('/john/dup (1).txt', $paths);
+    }
+
+    public function testDeleteMultipleItemsRecordsOneRowPerItem()
+    {
+        $this->freshAuditLog();
+        $this->signIn('john@example.com', 'john123');
+
+        mkdir(TEST_REPOSITORY.'/john');
+        touch(TEST_REPOSITORY.'/john/one.txt', $this->timestamp);
+        touch(TEST_REPOSITORY.'/john/two.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/deleteitems', [
+            'items' => [
+                ['type' => 'file', 'path' => '/one.txt', 'name' => 'one.txt', 'time' => $this->timestamp],
+                ['type' => 'file', 'path' => '/two.txt', 'name' => 'two.txt', 'time' => $this->timestamp],
+            ],
+        ]);
+        $this->assertOk();
+
+        $paths = array_column($this->auditEvents(['action' => 'delete']), 'path');
+        $this->assertCount(2, $paths);
+        $this->assertContains('/john/one.txt', $paths);
+        $this->assertContains('/john/two.txt', $paths);
+    }
+
+    public function testCopyRecordsAuditWithActualDestAndFromDetail()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+
+        touch(TEST_REPOSITORY.'/a.txt', $this->timestamp);
+        mkdir(TEST_REPOSITORY.'/dest');
+
+        $this->sendRequest('POST', '/copyitems', [
+            'items' => [['type' => 'file', 'path' => '/a.txt', 'name' => 'a.txt', 'time' => $this->timestamp]],
+            'destination' => '/dest/',
+        ]);
+        $this->assertOk();
+
+        $events = $this->auditEvents(['action' => 'copy']);
+        $this->assertCount(1, $events);
+        // admin's homedir is '/', so paths are the literal root-relative paths.
+        $this->assertSame('/dest/a.txt', $events[0]['path']);
+        $this->assertSame('from /a.txt', $events[0]['detail']);
+    }
+
+    public function testMoveRecordsAuditWithActualDestAndFromDetail()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+
+        touch(TEST_REPOSITORY.'/m.txt', $this->timestamp);
+        mkdir(TEST_REPOSITORY.'/dest');
+
+        $this->sendRequest('POST', '/moveitems', [
+            'items' => [['type' => 'file', 'path' => '/m.txt', 'name' => 'm.txt', 'time' => $this->timestamp]],
+            'destination' => '/dest/',
+        ]);
+        $this->assertOk();
+
+        $events = $this->auditEvents(['action' => 'move']);
+        $this->assertCount(1, $events);
+        $this->assertSame('/dest/m.txt', $events[0]['path']);
+        $this->assertSame('from /m.txt', $events[0]['detail']);
+    }
+
+    public function testRenameRecordsAudit()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+
+        touch(TEST_REPOSITORY.'/old.txt', $this->timestamp);
+
+        $this->sendRequest('POST', '/renameitem', [
+            'destination' => '/',
+            'from' => 'old.txt',
+            'to' => 'new.txt',
+        ]);
+        $this->assertOk();
+
+        $events = $this->auditEvents(['action' => 'rename']);
+        $this->assertCount(1, $events);
+        $this->assertSame('/new.txt', $events[0]['path']);
+        $this->assertSame('from /old.txt', $events[0]['detail']);
+    }
+
+    public function testSaveContentRecordsActualPath()
+    {
+        $this->freshAuditLog();
+        $this->signIn('admin@example.com', 'admin123');
+
+        $this->sendRequest('POST', '/savecontent', [
+            'name' => 'note.txt',
+            'content' => 'hello',
+        ]);
+        $this->assertOk();
+
+        $events = $this->auditEvents(['action' => 'save']);
+        $this->assertCount(1, $events);
+        $this->assertSame('/note.txt', $events[0]['path']);
+        $this->assertFileExists(TEST_REPOSITORY.'/note.txt');
+    }
+
     public function testDownloadFileHeaders()
     {
         $username = 'john@example.com';

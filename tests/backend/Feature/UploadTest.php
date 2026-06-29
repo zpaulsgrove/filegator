@@ -76,6 +76,53 @@ class UploadTest extends TestCase
         ]);
     }
 
+    public function testUploadRecordsAudit()
+    {
+        @unlink(TEST_TMP_PATH.'audit_log.jsonl');
+        @unlink(TEST_TMP_PATH.'audit_log.jsonl.pruned');
+
+        $this->signIn('john@example.com', 'john123');
+
+        $fp = fopen(TEST_FILE, 'w');
+        fseek($fp, 0.5 * 1024 * 1024 - 1, SEEK_CUR);
+        fwrite($fp, 'a');
+        fclose($fp);
+
+        $files = ['file' => new UploadedFile(TEST_FILE, 'audited.txt', 'text/plain', null, true)];
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableCurrentChunkSize' => 0.5 * 1024 * 1024,
+            'resumableTotalChunks' => 1,
+            'resumableTotalSize' => 0.5 * 1024 * 1024,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-AUDIT-TEST',
+            'resumableFilename' => 'audited.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        $this->sendRequest('GET', '/upload', $data, $files);
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init([
+            'log_file' => TEST_TMP_PATH.'audit_log.jsonl',
+            'key_path' => TEST_TMP_PATH.'audit_encryption.key',
+            'max_age_days' => 30,
+        ]);
+
+        $events = $audit->query(['action' => 'upload']);
+        $this->assertCount(1, $events);
+        $this->assertSame('john@example.com', $events[0]['user']);
+        // john's homedir is /john, so the upload to '/' lands root-relative there.
+        $this->assertSame('/john/audited.txt', $events[0]['path']);
+    }
+
     public function testFileUploadWithTwoChunks()
     {
         $this->signIn('john@example.com', 'john123');

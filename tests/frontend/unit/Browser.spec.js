@@ -45,7 +45,9 @@ function mountBrowser(opts = {}) {
       $router: { push: jest.fn(() => ({ catch: () => {} })) },
       $modal: { open: jest.fn() },
       $dialog: { alert: jest.fn(), confirm: jest.fn(), prompt: jest.fn() },
+      $toast: { open: jest.fn() },
       lang: s => s,
+      escapeHtml: s => s,
       can: opts.can || (() => false), // false => mounted() returns early
       handleError: jest.fn(),
       hasPreview: () => true,
@@ -291,17 +293,41 @@ describe('Browser.vue — downloadEach', () => {
 
     expect(api.downloadBlob).toHaveBeenCalledTimes(3)
     expect(saveSpy).toHaveBeenCalledTimes(3)
+    expect(wrapper.vm.$toast.open).not.toHaveBeenCalled()
   })
 
-  it('surfaces a failure toast when a file cannot be streamed (HTML error body)', async () => {
+  it('saves a successful text/html file instead of treating it as an error', async () => {
+    // Regression: a real .html download has Content-Type text/html; it must be saved,
+    // not mistaken for the server's HTML error page.
     const wrapper = mountBrowser({ can: () => true })
     api.downloadBlob.mockResolvedValueOnce(new Blob(['<html></html>'], { type: 'text/html' }))
     const saveSpy = jest.spyOn(wrapper.vm, 'saveBlob').mockImplementation(() => {})
 
-    await wrapper.vm.downloadEach([{ type: 'file', name: 'gone.txt', path: '/gone.txt' }])
+    await wrapper.vm.downloadEach([{ type: 'file', name: 'report.html', path: '/report.html' }])
 
-    expect(wrapper.vm.handleError).toHaveBeenCalled()
-    expect(saveSpy).not.toHaveBeenCalled()
+    expect(saveSpy).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.$toast.open).not.toHaveBeenCalled()
+  })
+
+  it('continues past a failed file and reports the failed names once', async () => {
+    const wrapper = mountBrowser({ can: () => true })
+    api.downloadBlob
+      .mockResolvedValueOnce(new Blob(['x'], { type: 'text/plain' }))
+      .mockRejectedValueOnce(new Error('404'))
+      .mockResolvedValueOnce(new Blob(['x'], { type: 'text/plain' }))
+    const saveSpy = jest.spyOn(wrapper.vm, 'saveBlob').mockImplementation(() => {})
+
+    await wrapper.vm.downloadEach([
+      { type: 'file', name: 'a', path: '/a' },
+      { type: 'file', name: 'gone', path: '/gone' },
+      { type: 'file', name: 'c', path: '/c' },
+    ])
+
+    expect(api.downloadBlob).toHaveBeenCalledTimes(3) // did not abort on the failure
+    expect(saveSpy).toHaveBeenCalledTimes(2)          // the two successes were saved
+    expect(wrapper.vm.$toast.open).toHaveBeenCalledTimes(1)
+    const msg = wrapper.vm.$toast.open.mock.calls[0][0].message
+    expect(msg).toContain('gone')
   })
 })
 

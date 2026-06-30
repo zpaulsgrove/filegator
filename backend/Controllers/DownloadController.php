@@ -58,6 +58,12 @@ class DownloadController
         try {
             $file = $this->storage->readStream((string) base64_decode($request->input('path')));
         } catch (\Exception $e) {
+            // XHR callers (the multi-file blob download) need a real error status
+            // so they can detect the failure; plain browser navigations still get
+            // the redirect-to-home behaviour they expect.
+            if ($request->isXmlHttpRequest()) {
+                return $response->json('File not found', 404);
+            }
             return $response->redirect('/');
         }
 

@@ -376,9 +376,12 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  downloadUrl (path) {
+    return 'download&path='+encodeURIComponent(Base64.encode(path))
+  },
   downloadItem (params) {
     return new Promise((resolve, reject) => {
-      axios.get('download&path='+encodeURIComponent(Base64.encode(params.path)),
+      axios.get(this.downloadUrl(params.path),
         {
           transformResponse: [data => data],
         })
@@ -387,8 +390,10 @@ const api = {
     })
   },
   downloadBlob (params) {
-    return axios.get('download&path='+encodeURIComponent(Base64.encode(params.path)),
-      { responseType: 'blob' }).then(res => res.data)
+    // X-Requested-With makes the backend return a 4xx (not a redirect) on
+    // failure, so the promise rejects and the caller can report the error.
+    return axios.get(this.downloadUrl(params.path),
+      { responseType: 'blob', headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(res => res.data)
   },
   saveContent (params) {
     return new Promise((resolve, reject) => {

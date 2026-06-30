@@ -520,6 +520,9 @@ export default {
       // (e.g. a PDF) keep previewing instead of forcing a save.
       const raw = this.$store.state.config.zip_threshold
       const threshold = (Number.isInteger(raw) && raw >= 1) ? raw : 5
+      if (raw !== undefined && raw !== threshold) {
+        console.warn('filegator: ignoring invalid zip_threshold config value', raw, '— using', threshold)
+      }
       const allFiles = items.length > 0 && items.every(i => i.type === 'file')
 
       if (this.can('download') && allFiles && items.length <= threshold) {
@@ -559,36 +562,43 @@ export default {
       window.open(this.getDownloadLink(item.path), '_blank')
     },
     // Sequential blob fetch so per-file failures can be surfaced — native downloads
-    // (window.open / <a download>) give no success/failure callback. Awaiting each fetch
-    // naturally spaces the saves; memory use is bounded by the (small) threshold.
+    // (window.open / <a download>) give no success/failure callback. The backend returns
+    // a 4xx for XHR on failure (see api.downloadBlob), so a rejected fetch is the failure
+    // signal. Each file is independent: one failure doesn't abort the rest; the names that
+    // failed are collected and reported together at the end.
     async downloadEach(items) {
       this.isLoading = true
-      try {
-        for (const item of items) {
+      const failed = []
+      for (const item of items) {
+        try {
           const blob = await api.downloadBlob({ path: item.path })
-          // /download redirects to '/' (HTML) on failure rather than returning a 4xx, so a
-          // text/html body means the file could not be streamed.
-          if (blob.type && blob.type.indexOf('text/html') === 0) {
-            throw item.name
-          }
           this.saveBlob(blob, item.name)
+        } catch (e) {
+          failed.push(item.name)
         }
-      } catch (error) {
-        this.handleError(error)
-      } finally {
-        this.isLoading = false
+      }
+      this.isLoading = false
+      if (failed.length) {
+        this.$toast.open({
+          message: this.escapeHtml(this.lang('Could not download') + ': ' + failed.join(', ')),
+          type: 'is-danger',
+          duration: 5000,
+        })
       }
     },
     saveBlob(blob, filename) {
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.style.display = 'none'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } finally {
+        URL.revokeObjectURL(url)
+      }
     },
     // Safari (desktop) and any iOS browser can't reliably trigger several programmatic
     // downloads in a row (a download fired after an await loses the user-gesture and is

@@ -630,6 +630,21 @@ class FilesTest extends TestCase
         $this->assertStatus(302);
     }
 
+    public function testDownloadMissingFileReturns404ForXhr()
+    {
+        $username = 'john@example.com';
+        $this->signIn($username, 'john123');
+
+        // XHR callers (the multi-file blob download) get a real error status instead
+        // of the browser redirect, so the client can detect and report the failure.
+        $path_encoded = base64_encode('missing.txt');
+        $this->sendRequest('GET', '/download&path='.$path_encoded, null, [], [
+            'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+        ]);
+
+        $this->assertStatus(404);
+    }
+
     public function testRenameJohnsFile()
     {
         $username = 'john@example.com';

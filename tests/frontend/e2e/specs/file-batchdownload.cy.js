@@ -15,16 +15,16 @@ describe('Batch download', () => {
   })
 
   it('prepares a batch-download archive for the selected files', () => {
-    // Two files keep this on the archive path: a single selected file now
-    // streams directly (no dialog), so we select multiple to exercise the
-    // POST /batchdownload "Your file is ready" wiring.
-    cy.createFile('dl1.txt')
-    cy.createFile('dl2.txt')
-    cy.contains('.file-row a.name', 'dl1.txt').should('exist')
-    cy.contains('.file-row a.name', 'dl2.txt').should('exist')
+    // Selections at or below zip_threshold (default 5) now download individually,
+    // so select more than the threshold (6 files) to stay on the archive path and
+    // exercise the POST /batchdownload "Your file is ready" wiring.
+    const files = ['dl1.txt', 'dl2.txt', 'dl3.txt', 'dl4.txt', 'dl5.txt', 'dl6.txt']
+    files.forEach(name => {
+      cy.createFile(name)
+      cy.contains('.file-row a.name', name).should('exist')
+    })
 
-    cy.selectRow('dl1.txt')
-    cy.selectRow('dl2.txt')
+    files.forEach(name => cy.selectRow(name))
     cy.get('[data-test="batch-download"]').click()
 
     cy.contains('Your file is ready').should('be.visible')

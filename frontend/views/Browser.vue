@@ -513,12 +513,30 @@ export default {
     batchDownload() {
       let items = this.getSelected()
 
-      // A single file needs no archive — stream it directly so the client gets
-      // the file itself (e.g. a PDF opening inline) instead of a zip wrapping a
-      // nested folder tree. Folders / multi-selections still go through the zip.
-      if (this.can('download') && items.length === 1 && items[0].type === 'file') {
-        this.download(items[0])
-        return
+      // Small, all-file selections download individually instead of being wrapped in a
+      // zip. Folders can't be streamed raw, and selections beyond the threshold are zipped,
+      // so both of those fall through to the archiver below. The threshold is a FILE COUNT
+      // from config (default 5); a single file always streams directly so inline types
+      // (e.g. a PDF) keep previewing instead of forcing a save.
+      const raw = this.$store.state.config.zip_threshold
+      const threshold = (Number.isInteger(raw) && raw >= 1) ? raw : 5
+      if (raw !== undefined && raw !== threshold) {
+        console.warn('filegator: ignoring invalid zip_threshold config value', raw, '— using', threshold)
+      }
+      const allFiles = items.length > 0 && items.every(i => i.type === 'file')
+
+      if (this.can('download') && allFiles && items.length <= threshold) {
+        if (items.length === 1) {
+          this.download(items[0])
+          this.checked = []
+          return
+        }
+        if (this.supportsMultiDownload()) {
+          this.downloadEach(items)
+          this.checked = []
+          return
+        }
+        // Safari / iOS: fall through to the server zip — they drop files in a download burst.
       }
 
       this.isLoading = true
@@ -542,6 +560,54 @@ export default {
     },
     download(item) {
       window.open(this.getDownloadLink(item.path), '_blank')
+    },
+    // Sequential blob fetch so per-file failures can be surfaced — native downloads
+    // (window.open / <a download>) give no success/failure callback. The backend returns
+    // a 4xx for XHR on failure (see api.downloadBlob), so a rejected fetch is the failure
+    // signal. Each file is independent: one failure doesn't abort the rest; the names that
+    // failed are collected and reported together at the end.
+    async downloadEach(items) {
+      this.isLoading = true
+      const failed = []
+      for (const item of items) {
+        try {
+          const blob = await api.downloadBlob({ path: item.path })
+          this.saveBlob(blob, item.name)
+        } catch (e) {
+          failed.push(item.name)
+        }
+      }
+      this.isLoading = false
+      if (failed.length) {
+        this.$toast.open({
+          message: this.escapeHtml(this.lang('Could not download') + ': ' + failed.join(', ')),
+          type: 'is-danger',
+          duration: 5000,
+        })
+      }
+    },
+    saveBlob(blob, filename) {
+      const url = URL.createObjectURL(blob)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    },
+    // Safari (desktop) and any iOS browser can't reliably trigger several programmatic
+    // downloads in a row (a download fired after an await loses the user-gesture and is
+    // blocked), so callers route those to the server-side zip instead.
+    supportsMultiDownload() {
+      const ua = navigator.userAgent || ''
+      const isiOS = /iP(ad|hone|od)/.test(ua)
+      const isDesktopSafari = /Safari/.test(ua) && !/Chrome|Chromium|Android|CriOS|FxiOS|Edg|OPR/.test(ua)
+      return !(isiOS || isDesktopSafari)
     },
     dismissMfaBanner() {
       const user = this.$store.state.user

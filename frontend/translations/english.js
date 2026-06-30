@@ -42,6 +42,7 @@ const data = {
   'Unzip': 'Unzip',
   'Delete': 'Delete',
   'Download': 'Download',
+  'Could not download': 'Could not download',
   'Copy link': 'Copy link',
   'Done': 'Done',
   'Drop files to upload': 'Drop files to upload',

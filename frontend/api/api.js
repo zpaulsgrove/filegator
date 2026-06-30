@@ -386,6 +386,10 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  downloadBlob (params) {
+    return axios.get('download&path='+encodeURIComponent(Base64.encode(params.path)),
+      { responseType: 'blob' }).then(res => res.data)
+  },
   saveContent (params) {
     return new Promise((resolve, reject) => {
       axios.post('savecontent', {

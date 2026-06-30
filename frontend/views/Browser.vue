@@ -513,12 +513,27 @@ export default {
     batchDownload() {
       let items = this.getSelected()
 
-      // A single file needs no archive — stream it directly so the client gets
-      // the file itself (e.g. a PDF opening inline) instead of a zip wrapping a
-      // nested folder tree. Folders / multi-selections still go through the zip.
-      if (this.can('download') && items.length === 1 && items[0].type === 'file') {
-        this.download(items[0])
-        return
+      // Small, all-file selections download individually instead of being wrapped in a
+      // zip. Folders can't be streamed raw, and selections beyond the threshold are zipped,
+      // so both of those fall through to the archiver below. The threshold is a FILE COUNT
+      // from config (default 5); a single file always streams directly so inline types
+      // (e.g. a PDF) keep previewing instead of forcing a save.
+      const raw = this.$store.state.config.zip_threshold
+      const threshold = (Number.isInteger(raw) && raw >= 1) ? raw : 5
+      const allFiles = items.length > 0 && items.every(i => i.type === 'file')
+
+      if (this.can('download') && allFiles && items.length <= threshold) {
+        if (items.length === 1) {
+          this.download(items[0])
+          this.checked = []
+          return
+        }
+        if (this.supportsMultiDownload()) {
+          this.downloadEach(items)
+          this.checked = []
+          return
+        }
+        // Safari / iOS: fall through to the server zip — they drop files in a download burst.
       }
 
       this.isLoading = true
@@ -542,6 +557,47 @@ export default {
     },
     download(item) {
       window.open(this.getDownloadLink(item.path), '_blank')
+    },
+    // Sequential blob fetch so per-file failures can be surfaced — native downloads
+    // (window.open / <a download>) give no success/failure callback. Awaiting each fetch
+    // naturally spaces the saves; memory use is bounded by the (small) threshold.
+    async downloadEach(items) {
+      this.isLoading = true
+      try {
+        for (const item of items) {
+          const blob = await api.downloadBlob({ path: item.path })
+          // /download redirects to '/' (HTML) on failure rather than returning a 4xx, so a
+          // text/html body means the file could not be streamed.
+          if (blob.type && blob.type.indexOf('text/html') === 0) {
+            throw item.name
+          }
+          this.saveBlob(blob, item.name)
+        }
+      } catch (error) {
+        this.handleError(error)
+      } finally {
+        this.isLoading = false
+      }
+    },
+    saveBlob(blob, filename) {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      a.style.display = 'none'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    },
+    // Safari (desktop) and any iOS browser can't reliably trigger several programmatic
+    // downloads in a row (a download fired after an await loses the user-gesture and is
+    // blocked), so callers route those to the server-side zip instead.
+    supportsMultiDownload() {
+      const ua = navigator.userAgent || ''
+      const isiOS = /iP(ad|hone|od)/.test(ua)
+      const isDesktopSafari = /Safari/.test(ua) && !/Chrome|Chromium|Android|CriOS|FxiOS|Edg|OPR/.test(ua)
+      return !(isiOS || isDesktopSafari)
     },
     dismissMfaBanner() {
       const user = this.$store.state.user

@@ -27,6 +27,7 @@ jest.mock('@/api/api', () => ({
     getDir: jest.fn(() => Promise.resolve({ files: [], location: '/' })),
     changeDir: jest.fn(() => Promise.resolve({ files: [], location: '/' })),
     batchDownload: jest.fn(() => Promise.resolve({ uniqid: 'ZIP1' })),
+    downloadBlob: jest.fn(() => Promise.resolve(new Blob(['x'], { type: 'application/pdf' }))),
   },
 }))
 
@@ -209,7 +210,12 @@ describe('Browser.vue — goTo deep links', () => {
 })
 
 describe('Browser.vue — batchDownload routing', () => {
-  it('streams a single file directly (no archive)', () => {
+  beforeEach(() => {
+    api.batchDownload.mockClear()
+    api.downloadBlob.mockClear()
+  })
+
+  it('streams a single file directly (no archive) so inline types keep previewing', () => {
     const wrapper = mountBrowser({ can: () => true })
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {})
     wrapper.vm.checked = [{ type: 'file', name: 'a.pdf', path: '/a.pdf' }]
@@ -221,14 +227,99 @@ describe('Browser.vue — batchDownload routing', () => {
     openSpy.mockRestore()
   })
 
-  it('zips a multi-selection via the batchDownload API', () => {
-    const wrapper = mountBrowser({ can: () => true })
+  it('downloads a small all-file selection individually (within threshold)', () => {
+    const wrapper = mountBrowser({ can: () => true, config: { zip_threshold: 5 } })
+    jest.spyOn(wrapper.vm, 'supportsMultiDownload').mockReturnValue(true)
+    const eachSpy = jest.spyOn(wrapper.vm, 'downloadEach').mockImplementation(() => {})
+    const items = [
+      { type: 'file', name: 'a', path: '/a' },
+      { type: 'file', name: 'b', path: '/b' },
+      { type: 'file', name: 'c', path: '/c' },
+    ]
+    wrapper.vm.checked = items
+
+    wrapper.vm.batchDownload()
+
+    expect(eachSpy).toHaveBeenCalledWith(items)
+    expect(api.batchDownload).not.toHaveBeenCalled()
+  })
+
+  it('zips a selection beyond the threshold via the batchDownload API', () => {
+    const wrapper = mountBrowser({ can: () => true, config: { zip_threshold: 5 } })
+    wrapper.vm.checked = ['a', 'b', 'c', 'd', 'e', 'f'].map(n => ({ type: 'file', name: n, path: '/' + n }))
+    wrapper.vm.batchDownload()
+    expect(api.batchDownload).toHaveBeenCalledWith({ items: wrapper.vm.checked })
+  })
+
+  it('zips when a folder is part of the selection, even within the threshold', () => {
+    const wrapper = mountBrowser({ can: () => true, config: { zip_threshold: 5 } })
+    wrapper.vm.checked = [
+      { type: 'file', name: 'a', path: '/a' },
+      { type: 'dir', name: 'd', path: '/d' },
+    ]
+    wrapper.vm.batchDownload()
+    expect(api.batchDownload).toHaveBeenCalledWith({ items: wrapper.vm.checked })
+  })
+
+  it('falls back to the zip when the browser cannot multi-download (Safari/iOS)', () => {
+    const wrapper = mountBrowser({ can: () => true, config: { zip_threshold: 5 } })
+    jest.spyOn(wrapper.vm, 'supportsMultiDownload').mockReturnValue(false)
     wrapper.vm.checked = [
       { type: 'file', name: 'a', path: '/a' },
       { type: 'file', name: 'b', path: '/b' },
     ]
     wrapper.vm.batchDownload()
     expect(api.batchDownload).toHaveBeenCalledWith({ items: wrapper.vm.checked })
+  })
+})
+
+describe('Browser.vue — downloadEach', () => {
+  beforeEach(() => {
+    api.downloadBlob.mockClear()
+  })
+
+  it('fetches and saves each file as a blob', async () => {
+    const wrapper = mountBrowser({ can: () => true })
+    const saveSpy = jest.spyOn(wrapper.vm, 'saveBlob').mockImplementation(() => {})
+    const items = [
+      { type: 'file', name: 'a', path: '/a' },
+      { type: 'file', name: 'b', path: '/b' },
+      { type: 'file', name: 'c', path: '/c' },
+    ]
+
+    await wrapper.vm.downloadEach(items)
+
+    expect(api.downloadBlob).toHaveBeenCalledTimes(3)
+    expect(saveSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('surfaces a failure toast when a file cannot be streamed (HTML error body)', async () => {
+    const wrapper = mountBrowser({ can: () => true })
+    api.downloadBlob.mockResolvedValueOnce(new Blob(['<html></html>'], { type: 'text/html' }))
+    const saveSpy = jest.spyOn(wrapper.vm, 'saveBlob').mockImplementation(() => {})
+
+    await wrapper.vm.downloadEach([{ type: 'file', name: 'gone.txt', path: '/gone.txt' }])
+
+    expect(wrapper.vm.handleError).toHaveBeenCalled()
+    expect(saveSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('Browser.vue — supportsMultiDownload', () => {
+  const setUA = ua => Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+  const original = window.navigator.userAgent
+  afterEach(() => setUA(original))
+
+  it('returns true for Chrome and Firefox, false for desktop Safari and iOS', () => {
+    const wrapper = mountBrowser({ can: () => true })
+    setUA('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36')
+    expect(wrapper.vm.supportsMultiDownload()).toBe(true)
+    setUA('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15) Gecko/20100101 Firefox/121.0')
+    expect(wrapper.vm.supportsMultiDownload()).toBe(true)
+    setUA('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15')
+    expect(wrapper.vm.supportsMultiDownload()).toBe(false)
+    setUA('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1')
+    expect(wrapper.vm.supportsMultiDownload()).toBe(false)
   })
 })
 

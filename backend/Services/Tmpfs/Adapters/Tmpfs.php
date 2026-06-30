@@ -100,8 +100,15 @@ class Tmpfs implements Service, TmpfsInterface
     public function remove(string $filename)
     {
         $filename = $this->sanitizeFilename($filename);
+        $path = $this->getPath().$filename;
 
-        unlink($this->getPath().$filename);
+        // Guard the unlink: concurrent GC passes (a tmpfs-wide clean() racing a
+        // namespaced cleanup) can remove the same file between one pass listing
+        // it and this one unlinking it. Without the guard the loser raises a
+        // "No such file or directory" warning even though removal was the goal.
+        if (file_exists($path)) {
+            @unlink($path);
+        }
     }
 
     public function clean(int $older_than)

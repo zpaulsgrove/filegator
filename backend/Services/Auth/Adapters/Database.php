@@ -124,19 +124,22 @@ class Database implements Service, AuthInterface
         // Store the homedirs array as JSON in the existing `homedir` column
         // — no schema migration needed. Single-folder users get a 1-element
         // JSON array. mapToUserObject decodes either shape on read.
-        $this->getConnection()->query('UPDATE users SET', [
+        $fields = [
             'username' => $user->getUsername(),
             'name' => $user->getName(),
             'homedir' => json_encode($user->getHomeDirs()),
             'permissions' => $user->getPermissions(true),
             'role' => $user->getRole(),
-        ], 'WHERE username = ?', $username);
+        ];
 
+        // Set the password in the SAME statement as the rename. A separate
+        // UPDATE keyed on the old username would miss the row once the rename
+        // above changed it, silently dropping the password change.
         if ($password) {
-            $this->getConnection()->query('UPDATE users SET', [
-                'password' => $this->hashPassword($password),
-            ], 'WHERE username = ?', $username);
+            $fields['password'] = $this->hashPassword($password);
         }
+
+        $this->getConnection()->query('UPDATE users SET', $fields, 'WHERE username = ?', $username);
 
         return $this->find($user->getUsername()) ?: $user;
     }

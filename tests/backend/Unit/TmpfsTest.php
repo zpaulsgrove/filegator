@@ -81,6 +81,18 @@ class TmpfsTest extends TestCase
         $this->assertFileDoesNotExist(TEST_TMP_PATH.'a.txt');
     }
 
+    public function testRemovingMissingFileIsANoOp()
+    {
+        // Regression: remove() unlinked unconditionally, so a concurrent GC
+        // pass that already deleted the file raised a warning. It must now be
+        // a silent no-op when the file is already gone.
+        $this->assertFileDoesNotExist(TEST_TMP_PATH.'ghost.txt');
+
+        $this->service->remove('ghost.txt');
+
+        $this->assertFileDoesNotExist(TEST_TMP_PATH.'ghost.txt');
+    }
+
     public function testCheckExistingFile()
     {
         $this->service->write('a.txt', 'lorem');

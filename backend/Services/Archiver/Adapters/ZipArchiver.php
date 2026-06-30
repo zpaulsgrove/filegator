@@ -139,21 +139,79 @@ class ZipArchiver implements Service, ArchiverInterface
 
         $contents = $archive->listContents('/', true);
 
+        // $dir_map memoizes each zip directory path -> the actual directory
+        // created under $destination. createDir() upcounts a name that collides
+        // with an existing non-empty folder (e.g. "folder" -> "folder (1)");
+        // routing both directory entries AND every file's parent through the
+        // same resolver keeps the tree together. Crucially this resolves a
+        // file's ancestor directories on demand, so zips that omit explicit
+        // directory entries (very common) are handled identically — otherwise
+        // such a file would fall back to the original name and merge into a
+        // pre-existing colliding folder.
+        $dir_map = [];
+
+        // Create explicit directory entries first so empty directories survive
+        // extraction. resolveExtractDir() handles parents recursively, so the
+        // listContents order does not matter.
         foreach ($contents as $item) {
-            $stream = null;
             if ($item['type'] == 'dir') {
-                $storage->createDir($destination, $item['path']);
+                $this->resolveExtractDir($storage, $destination, $item['path'], $dir_map);
             }
-            if ($item['type'] == 'file') {
-                $stream = $archive->readStream($item['path']);
-                $storage->store($destination.'/'.$item['dirname'], $item['basename'], $stream);
+        }
+
+        foreach ($contents as $item) {
+            if ($item['type'] != 'file') {
+                continue;
             }
+
+            $stream = $archive->readStream($item['path']);
+
+            $rel_dir = $this->resolveExtractDir($storage, $destination, $item['dirname'], $dir_map);
+            $target = $rel_dir === '' ? $destination : $destination.'/'.$rel_dir;
+
+            $storage->store($target, $item['basename'], $stream);
+
             if (is_resource($stream)) {
                 fclose($stream);
             }
         }
 
         $this->tmpfs->remove($name);
+    }
+
+    /**
+     * Resolve a zip directory path to the actual (collision-resolved) directory
+     * created under $destination, creating each missing segment and memoizing
+     * the result in $dir_map. Recurses so a parent is resolved (and upcounted)
+     * before its children, and so files whose ancestor directories have no
+     * explicit zip entry are still placed in the same resolved tree.
+     *
+     * @param array<string,string> $dir_map
+     */
+    private function resolveExtractDir(Storage $storage, string $destination, string $zip_dir, array &$dir_map): string
+    {
+        $zip_dir = trim($zip_dir, '/');
+        if ($zip_dir === '' || $zip_dir === '.') {
+            return '';
+        }
+        if (isset($dir_map[$zip_dir])) {
+            return $dir_map[$zip_dir];
+        }
+
+        $parent_rel = $this->resolveExtractDir($storage, $destination, dirname($zip_dir), $dir_map);
+        $target_parent = $parent_rel === '' ? $destination : $destination.'/'.$parent_rel;
+
+        $created = $storage->createDir($target_parent, basename($zip_dir));
+
+        // createDir() returns the prefix-applied path; only its final segment
+        // can differ from the requested name (collision upcount). On failure
+        // fall back to the literal name — store() still auto-creates parents.
+        $base = $created !== false ? basename($created) : basename($zip_dir);
+        $rel = $parent_rel === '' ? $base : $parent_rel.'/'.$base;
+
+        $dir_map[$zip_dir] = $rel;
+
+        return $rel;
     }
 
     public function closeArchive()

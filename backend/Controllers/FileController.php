@@ -288,9 +288,14 @@ class FileController
             fclose($stream);
         }
 
-        if ($stored !== false) {
-            $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_SAVE, $stored);
+        if ($stored === false) {
+            // store() returns false when the overwrite failed (e.g. the
+            // delete/rename step could not complete). Surface it instead of
+            // reporting a phantom success while the file was never written.
+            return $response->json('Error saving file', 500);
         }
+
+        $this->recordAuditAbsolute($request, $audit, AuditLog::ACTION_SAVE, $stored);
 
         return $response->json('Done');
     }

@@ -146,6 +146,13 @@ class User implements \JsonSerializable
             $permissions = explode('|', $permissions);
         }
 
+        // explode('|', '') yields [''] (a single empty string), not [], so an
+        // empty permission set would otherwise be stored as ['']. Drop empty
+        // entries so it normalizes to [].
+        $permissions = array_values(array_filter($permissions, function ($p) {
+            return $p !== '';
+        }));
+
         $this->checkValidPermissions($permissions);
 
         $this->permissions = $permissions;

@@ -20,8 +20,6 @@ class Router implements Service
 {
     protected $request;
 
-    protected $auth;
-
     protected $container;
 
     protected $user;
@@ -46,7 +44,7 @@ class Router implements Service
         $routes = require $config['routes_file'];
 
         $dispatcher = FastRoute\simpleDispatcher(function (FastRoute\RouteCollector $r) use ($routes) {
-            if ($routes && ! empty($routes)) {
+            if (! empty($routes)) {
                 foreach ($routes as $params) {
                     if ($this->user->hasRole($params['roles']) && $this->user->hasPermissions($params['permissions'])) {
                         $r->addRoute($params['route'][0], $params['route'][1], $params['route'][2]);

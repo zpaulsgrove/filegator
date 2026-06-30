@@ -19,19 +19,26 @@ class BackupCodeGenerator
     const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // excludes 0,O,1,I
 
     /**
-     * Generate $count plaintext codes of $length characters, formatted as XXXXX-XXXXX.
+     * Generate $count plaintext codes of $length characters, split into two
+     * groups by a hyphen (e.g. the default length 10 yields XXXXX-XXXXX).
      *
      * @return string[]
      */
     public static function generate(int $count = 10, int $length = 10): array
     {
+        // Derive the split point from $length so the grouping tracks the
+        // requested length. A hardcoded split at 5 only produced the documented
+        // XXXXX-XXXXX shape for length 10 and emitted malformed codes (empty or
+        // lopsided groups, a trailing hyphen) for any other length.
+        $split = intdiv($length, 2);
+
         $codes = [];
         for ($i = 0; $i < $count; $i++) {
             $raw = '';
             for ($j = 0; $j < $length; $j++) {
                 $raw .= self::ALPHABET[random_int(0, strlen(self::ALPHABET) - 1)];
             }
-            $codes[] = substr($raw, 0, 5).'-'.substr($raw, 5);
+            $codes[] = substr($raw, 0, $split).'-'.substr($raw, $split);
         }
         return $codes;
     }

@@ -147,6 +147,22 @@ abstract class AuthTest extends TestCase
         $this->assertEquals($admin->getUsername(), $auth_user->getUsername());
     }
 
+    public function testWeCanRenameAndChangePasswordTogether()
+    {
+        // Regression: the Database adapter renamed the row first and then
+        // wrote the password keyed on the now-stale old username, so a
+        // simultaneous rename + password change silently dropped the password.
+        $admin = $this->addAdmin('test123');
+
+        $admin->setUsername('renamed@example.com');
+        $this->auth->update('admin@example.com', $admin, 'newpassword');
+
+        // Old username + old password must no longer authenticate.
+        $this->assertFalse($this->auth->authenticate('admin@example.com', 'test123'));
+        // The new password must work against the new username.
+        $this->assertTrue($this->auth->authenticate('renamed@example.com', 'newpassword'));
+    }
+
     public function testWeCanDeleteUser()
     {
         $admin = $this->addAdmin();
@@ -213,6 +229,17 @@ abstract class AuthTest extends TestCase
 
         $this->expectException(Exception::class);
         $this->auth->update('mike@example.com', $user);
+    }
+
+    public function testEmptyEncodedPermissionsNormalizeToEmptyArray()
+    {
+        // Regression: explode('|', '') returns [''] (one empty string), so an
+        // empty permission set was stored as [''] instead of [].
+        $user = new User();
+        $user->setPermissions('', true);
+
+        $this->assertSame([], $user->getPermissions());
+        $this->assertSame('', $user->getPermissions(true));
     }
 
     public function testNoGuestException()

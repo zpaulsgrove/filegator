@@ -28,9 +28,23 @@ class App
         $container->set(Response::class, $response);
         $container->set(StreamedResponse::class, $sresponse);
 
-        foreach ($config->get('services', []) as $key => $service) {
-            $container->set($key, $container->get($service['handler']));
-            $container->get($key)->init(isset($service['config']) ? $service['config'] : []);
+        try {
+            foreach ($config->get('services', []) as $key => $service) {
+                $container->set($key, $container->get($service['handler']));
+                $container->get($key)->init(isset($service['config']) ? $service['config'] : []);
+            }
+        } catch (\Throwable $e) {
+            if (headers_sent()) {
+                throw $e; // re-throw so PHPUnit can assert on it (test output makes headers_sent() true)
+            }
+
+            // Log the real cause server-side; hand the client a generic 500
+            // instead of a raw stack trace.
+            error_log($e);
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Internal Server Error']);
+            die;
         }
 
         $response->send();

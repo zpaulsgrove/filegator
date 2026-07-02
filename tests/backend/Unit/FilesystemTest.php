@@ -1112,6 +1112,33 @@ class FilesystemTest extends TestCase
         );
     }
 
+    public function testChmodRejectsSetuidBit()
+    {
+        // octdec(4755) genuinely sets the setuid bit — must be rejected before
+        // any filesystem call (no file needs to exist).
+        $this->expectException(Exception::class);
+        $this->storage->chmod('/whatever', 4755);
+    }
+
+    public function testChmodRejectsSetgidBit()
+    {
+        $this->expectException(Exception::class);
+        $this->storage->chmod('/whatever', 2777);
+    }
+
+    public function testChmodRejectsNegativePermissions()
+    {
+        $this->expectException(Exception::class);
+        $this->storage->chmod('/whatever', -1);
+    }
+
+    public function testChmodRejectsInvalidOctalDigit()
+    {
+        // 88 is <= 777 numerically but contains an 8 — not a valid octal mode.
+        $this->expectException(Exception::class);
+        $this->storage->chmod('/whatever', 88);
+    }
+
     public function testChmodItemThrowsForUnsupportedAdapter()
     {
         $storage = new Filesystem();

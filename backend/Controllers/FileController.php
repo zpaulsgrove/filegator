@@ -205,19 +205,30 @@ class FileController
         if (! $this->ensureActiveHomedir($response)) return;
 
         $items = $request->input('items', []);
+        // Keep the raw request value so the audit detail preserves the client's
+        // form (e.g. '0600'). chmod()'s int type-hint coerces it for the actual
+        // permission change + validation.
         $permissions = $request->input('permissions', 0);
         /** @var null|'all'|'folders'|'files' */
         $recursive = $request->input('recursive', null);
 
         $events = [];
-        foreach ($items as $item) {
-            if ($this->storage->chmod($item->path, $permissions, $recursive)) {
-                $events[] = [
-                    'action' => AuditLog::ACTION_CHMOD,
-                    'path' => $this->auditGlobalPath($item->path),
-                    'detail' => 'mode '.$permissions,
-                ];
+        try {
+            foreach ($items as $item) {
+                if ($this->storage->chmod($item->path, $permissions, $recursive)) {
+                    $events[] = [
+                        'action' => AuditLog::ACTION_CHMOD,
+                        'path' => $this->auditGlobalPath($item->path),
+                        'detail' => 'mode '.$permissions,
+                    ];
+                }
             }
+        } catch (\Exception $e) {
+            // chmod() rejects out-of-range / special-bit modes. Surface it as a
+            // client error rather than letting it bubble up to a generic 500.
+            // $permissions is one value for the whole request, so this throws on
+            // the first item and no partial batch is recorded.
+            return $response->json('Invalid permission', 422);
         }
         $this->recordAuditBatch($request, $audit, $events);
 

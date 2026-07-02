@@ -49,13 +49,39 @@ class UploadController
         // rationale.
     }
 
+    /**
+     * Username component for chunk-file namespacing. Authenticated users get
+     * their (sanitized) real username. Guests (auth->user() === null) get a
+     * per-SESSION random token, NOT a constant 'guest': the resumable
+     * identifier is deterministic (size + filename), so a shared 'guest'
+     * namespace would let two concurrent anonymous uploaders collide on the
+     * same 'multipart_guest_<identifier>_' keys — the cross-tenant chunk
+     * corruption isolated in #71. The token lives in the session so it stays
+     * stable across a single guest's chunkCheck/upload requests (cookie-carried).
+     */
+    private function uploadUsername(): string
+    {
+        $user = $this->auth->user();
+        if ($user) {
+            return (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $user->getUsername());
+        }
+
+        $token = $this->session->get('guest_upload_token');
+        if (! $token) {
+            $token = bin2hex(random_bytes(8));
+            $this->session->set('guest_upload_token', $token);
+        }
+
+        return 'guest_'.preg_replace('/[^0-9a-zA-Z_]/', '', (string) $token);
+    }
+
     public function chunkCheck(Request $request, Response $response)
     {
         if (! $this->ensureActiveHomedir($response)) return;
 
         $file_name = $request->input('resumableFilename', 'file');
         $identifier = (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $request->input('resumableIdentifier'));
-        $username = (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $this->auth->user()->getUsername());
+        $username = $this->uploadUsername();
         $chunk_number = (int) $request->input('resumableChunkNumber');
 
         $chunk_file = 'multipart_'.$username.'_'.$identifier.'_'.$file_name.'.part'.$chunk_number;
@@ -77,7 +103,7 @@ class UploadController
         $total_chunks = (int) $request->input('resumableTotalChunks');
         $total_size = (int) $request->input('resumableTotalSize');
         $identifier = (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $request->input('resumableIdentifier'));
-        $username = (string) preg_replace('/[^0-9a-zA-Z_]/', '', (string) $this->auth->user()->getUsername());
+        $username = $this->uploadUsername();
 
         $filebag = $request->files;
         $file = $filebag->get('file');

@@ -76,6 +76,72 @@ class UploadTest extends TestCase
         ]);
     }
 
+    public function testGuestWithUploadPermissionCanUpload()
+    {
+        // Swap in an auth adapter whose guest holds 'upload', so the router
+        // registers /upload for an anonymous request and the controller runs.
+        // Regression for the guest-upload NPE: with a real guest,
+        // $this->auth->user() is null and the pre-fix code fataled on
+        // ->getUsername() in both chunkCheck and upload.
+        $this->overrideConfig([
+            'services' => [
+                'Filegator\Services\Auth\AuthInterface' => [
+                    'handler' => '\Tests\Fakes\GuestUploadAuth',
+                ],
+            ],
+        ]);
+
+        // create 0.5Mb dummy file (fits in one chunk)
+        $fp = fopen(TEST_FILE, 'w');
+        fseek($fp, 0.5 * 1024 * 1024 - 1, SEEK_CUR);
+        fwrite($fp, 'a');
+        fclose($fp);
+
+        $files = ['file' => new UploadedFile(TEST_FILE, 'guest.txt', 'text/plain', null, true)];
+
+        $data = [
+            'resumableChunkNumber' => 1,
+            'resumableChunkSize' => 1048576,
+            'resumableCurrentChunkSize' => 0.5 * 1024 * 1024,
+            'resumableTotalChunks' => 1,
+            'resumableTotalSize' => 0.5 * 1024 * 1024,
+            'resumableType' => 'text/plain',
+            'resumableIdentifier' => 'CHUNKS-GUEST-TEST',
+            'resumableFilename' => 'guest.txt',
+            'resumableRelativePath' => '/',
+        ];
+
+        // No signIn(): this is an anonymous guest. chunkCheck (GET) would fatal
+        // pre-fix; post-fix it returns 204 and seeds the per-session token.
+        $this->sendRequest('GET', '/upload', $data, $files);
+        $this->assertStatus(204);
+
+        // Carry the guest session forward so the per-session upload token stays
+        // stable across the chunkCheck and upload requests.
+        $this->captureSession();
+
+        $this->sendRequest('POST', '/upload', $data, $files);
+        $this->assertOk();
+
+        $this->captureSession();
+
+        $this->sendRequest('POST', '/getdir', [
+            'dir' => '/',
+        ]);
+        $this->assertOk();
+        $this->assertResponseJsonHas([
+            'data' => [
+                'files' => [
+                    0 => [
+                        'type' => 'file',
+                        'path' => '/guest.txt',
+                        'name' => 'guest.txt',
+                    ],
+                ],
+            ],
+        ]);
+    }
+
     public function testUploadRecordsAudit()
     {
         @unlink(TEST_TMP_PATH.'audit_log.jsonl');

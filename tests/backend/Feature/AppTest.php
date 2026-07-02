@@ -70,4 +70,30 @@ class AppTest extends TestCase
 
         $this->assertNotNull($auth->user());
     }
+
+    public function testBootstrapFailureIsCaught()
+    {
+        // Replace the FIRST service (Logger) with one whose init() throws, so
+        // the failure happens during App's service-init loop, before dispatch.
+        // Overriding an existing early key is deliberate: array_replace_recursive
+        // appends brand-new keys at the end (after Router), which would be too
+        // late to exercise the catch.
+        $this->overrideConfig([
+            'services' => [
+                'Filegator\Services\Logger\LoggerInterface' => [
+                    'handler' => '\Tests\Fakes\ThrowingInitService',
+                ],
+            ],
+        ]);
+
+        // App only re-throws (rather than emitting a generic 500 and die-ing)
+        // when headers are already sent. Under CLI, headers_sent() flips true
+        // after any output, so emit a byte to force the assertable re-throw path
+        // instead of killing the test runner.
+        echo ' ';
+
+        $this->expectException(\Throwable::class);
+
+        $this->bootFreshApp($this->getMockConfig());
+    }
 }

@@ -56,6 +56,12 @@ menu:
                 security:
                     text: Security
                     relativeUrl: configuration/security.html
+                audit-log:
+                    text: Audit Log
+                    relativeUrl: configuration/audit-log.html
+                reports:
+                    text: Monthly Reports
+                    relativeUrl: configuration/reports.html
                 router:
                     text: Router
                     relativeUrl: configuration/router.html

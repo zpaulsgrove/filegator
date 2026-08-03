@@ -1,6 +1,10 @@
 # Changelog
 
 ## Upcoming...
+* **Monthly activity reports.** A cron-driven job (`php bin/filegator report:monthly`) builds a per-calendar-month CSV from the audit log, stores it **encrypted** under `private/reports/`, and emails admins a notification carrying no event data. Admins download it via `POST /admin/reports/download` (step-up auth; POST rather than GET so it is CSRF-protected and cannot be ridden by a cross-site navigation). New service blocks `ReportStore` and `MonthlyReport`, plus the project's first CLI entry point at `bin/filegator`.
+* **Breaking-ish:** the shipped `AuditLog.max_age_days` default moves **30 -> 40**. `query()` applies its retention cutoff before any date filter, so a 30-day log cannot cover a 31-day month and every monthly report would be silently short; 32 is the floor. **Existing installs must edit their own `configuration.php`** — it is copied once on first run and gitignored, so changing the sample does not affect them. Raising retention also keeps raw PII (including source IPs) on disk longer, which is a privacy decision worth making deliberately.
+* `AdminController::auditLog`'s access-log line now emits at WARNING instead of INFO. Production pins the Monolog handler at WARNING, so the record of who pulled 30 days of everyone's activity was previously discarded on every real deployment.
+* `.dockerignore` now excludes `private/*.key`, `private/audit_log.jsonl*` and the generated reports. `COPY . /var/www/filegator` was otherwise baking the audit log and its decryption key into image layers.
 * Added upload speed metric to the bottom pane, thanks @NikhilC2209 (see #581)
 * Added MFA (TOTP + one-time backup codes) — required for admins by default, optional for users (JsonFile adapter)
 * Added self-service password reset via emailed link, backed by a new Symfony Mailer service

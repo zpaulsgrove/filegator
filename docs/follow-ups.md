@@ -48,3 +48,29 @@ Original review artifact: `/tmp/compound-engineering/ce-code-review/20260516-130
 ## Build tooling
 
 - [ ] **Migrate the frontend build from Vue CLI / webpack 4 to Vite.** The build is on `@vue/cli-service@4.5.19` (webpack 4), which is the root cause of unfixable dev-tooling CVEs — concretely **CVE-2025-30360** in `webpack-dev-server`, whose fix (5.2.1) needs webpack 5 and is unreachable on Vue CLI (Vue CLI 5 only ships the still-vulnerable `webpack-dev-server` 4.15.2). Vue CLI is in maintenance mode. Migrate to **Vite** + `@vitejs/plugin-vue2` (this is a Vue 2.6 app): port `vue.config.js` (the `frontend/main.js` entry, the `@` → `frontend/` alias, `indexPath: main.html`, `filenameHashing: false`, CSS extract, and the `^/\?r=` → `:8081` dev proxy whose same-origin MFA-cookie rationale must be preserved), move the unit runner off `vue-cli-service test:unit`, and update the `nodejs.yml` / `e2e.yml` / `ci-static.yml` build+serve invocations. Removes `webpack-dev-server` from the tree entirely (closes CVE-2025-30360 by elimination) and unblocks dependencies currently pinned by Vue CLI 4. Accepted-risk rationale documented in `docs/configuration/security.md` § "Accepted dependency risks". (manual)
+
+## Monthly activity reports
+
+Deferred from the monthly-report PR, with the trigger that should prompt each.
+
+- [ ] **`AuditLog::stream(): \Generator`.** `query()` materialises every matching
+  event in one array, which is the dominant memory term when building a month's
+  CSV. The change is additive — `query()` becomes `iterator_to_array($this->stream(...))`
+  plus the existing sort — and moves the ceiling to the CSV alone. **Trigger:**
+  any deployment exceeding ~100k events/month.
+- [ ] **Streaming encryption.** `MfaSecretCrypto` holds whole strings, and
+  decryption peaks at several copies of the plaintext inside the PHP-FPM worker
+  serving the download. Streaming needs
+  `crypto_secretstream_xchacha20poly1305`, i.e. a new on-disk format and a fork
+  of the mutation-tested MFA crypto — not worth it until `max_events` and a
+  raised `memory_limit` stop being enough. **Trigger:** as above.
+- [ ] **Retire the client-side CSV builder.** Two producers of one format are
+  kept in step by `tests/fixtures/csv-contract.json`, asserted by both suites.
+  That manages the drift rather than removing it. The honest fix is to have the
+  browser download the server-generated file and delete the JS builder — worth
+  revisiting once the cron path has real usage.
+- [ ] **AAD on the stored ciphertext.** secretbox authenticates the report body
+  but not its filename or period, so two report files could be swapped and both
+  would still verify, and `index.json` metadata is neither encrypted nor
+  authenticated. Low impact while `private/` is trusted; revisit if reports ever
+  leave that directory.

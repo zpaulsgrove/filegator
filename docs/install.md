@@ -59,6 +59,27 @@ Open your browser and go to http://your_server_ip_address
 
 
 
+## Scheduled jobs
+
+The [monthly activity report](configuration/reports.html) is driven by system
+cron, not by the app itself. Add:
+
+```
+0 3 * * *  cd /path/to/filegator && php bin/filegator report:monthly
+```
+
+Run it **daily** (the job is idempotent per calendar month and retries a month
+that failed) and as the **same user as PHP-FPM**, or files it creates will be
+unreadable by the web process. Verify with `php bin/filegator report:preflight`.
+
+`bin/` must stay **outside the web root** — the document root is `dist/`, and
+everything else belongs outside it. The directory ships with a `deny from all`
+`.htaccess` as defence in depth, and the script refuses to run under any SAPI
+other than CLI.
+
+The Docker image has no cron daemon, so run the command from host cron or a
+sidecar against the `private/` volume.
+
 ## Show your support
 
 - Please star this repository on [GitHub](https://github.com/filegator/filegator/stargazers) if this project helped you!

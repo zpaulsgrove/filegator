@@ -29,7 +29,14 @@
             // suite, making the weekly mutation job impractically long, so they
             // stay excluded from the gate — the unit tests are the real value.
             "AuditMailer.php",
-            "WeeklyDigest.php"
+            "WeeklyDigest.php",
+            // Same reasoning: flock, sodium and real file I/O per mutant. Their
+            // unit tests (MonthlyReportTest/ReportStoreTest) are fast, but every
+            // mutant here drags in encrypted-write and lock-contention paths.
+            // ActivityCsv.php stays IN scope deliberately — it is pure, it holds
+            // the formula-injection guard, and it should score near-perfectly.
+            "MonthlyReport.php",
+            "ReportStore.php"
         ]
     },
     "mutators": {

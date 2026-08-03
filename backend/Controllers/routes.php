@@ -394,6 +394,33 @@ return [
         'permissions' => [
         ],
     ],
+    // Admin-only. Metadata about generated monthly reports — period, counts,
+    // coverage, size. Never event data.
+    [
+        'route' => [
+            'GET', '/admin/reports', '\Filegator\Controllers\ReportsController@index',
+        ],
+        'roles' => [
+            'admin',
+        ],
+        'permissions' => [
+        ],
+    ],
+    // Admin-only, and a POST on purpose. Security::init skips CSRF for GET, and
+    // SameSite=Lax cookies ride top-level cross-site navigations, so a GET here
+    // would let an attacker page force a logged-in admin's browser to download
+    // a CONFIDENTIAL CSV of every user's activity. POST gets CSRF validation
+    // and carries the step-up fields.
+    [
+        'route' => [
+            'POST', '/admin/reports/download', '\Filegator\Controllers\ReportsController@download',
+        ],
+        'roles' => [
+            'admin',
+        ],
+        'permissions' => [
+        ],
+    ],
     [
         'route' => [
             'POST', '/storeuser', '\Filegator\Controllers\AdminController@storeUser',

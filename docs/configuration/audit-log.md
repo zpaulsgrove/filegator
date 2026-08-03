@@ -44,10 +44,20 @@ compromised web process (which holds the key).
 
 ### Retention
 
-Entries older than `max_age_days` (default **30**) are **physically deleted**,
+Entries older than `max_age_days` (default **40**) are **physically deleted**,
 not just hidden. The purge runs lazily on write, at most once per day, so
 normal activity is unaffected. Set `max_age_days` to match your data-retention
 policy.
+
+The default is 40 rather than 30 because the [monthly report](reports.html)
+needs a whole calendar month to still be inside the retention window — `query()`
+applies its cutoff *before* any date filter, so a 30-day log cannot answer for a
+31-day month and every report would be silently short. **32 is the floor.**
+Raising retention also means raw PII, including source IPs, stays on disk
+longer; that is a privacy decision, not just a tuning knob.
+
+Reports generated from this log have their own, separate retention — see
+[Monthly activity reports](reports.html). Purging the log does not purge them.
 
 Note that a user with `write` or `chmod` permission can inflate the log
 cheaply — a single bulk request records one entry per item, and `chmod` does
@@ -57,8 +67,22 @@ deployment.
 
 ### Reports and CSV export
 
-Administrators can pull a 30-day rollup of this log from the **Reports** item
-in the top navigation, and export the underlying events as a CSV.
+There are **two producers of this CSV**, and they emit the same format:
+
+1. **On demand, in the browser.** Administrators pull a 30-day rollup from the
+   **Reports** item in the top navigation and export it. Plaintext, straight to
+   the admin's disk.
+2. **Monthly, on the server.** A cron job builds a per-calendar-month CSV,
+   stores it *encrypted* under `private/reports/`, and emails admins a
+   notification carrying no event data. See
+   [Monthly activity reports](reports.html).
+
+The two agree on columns, quoting and the formula-injection guard — a shared
+vector fixture is asserted by both the PHP and JavaScript test suites, so a
+change to one that is not made to the other fails the build. They differ in one
+column: `timestamp_local` renders in the *viewer's* timezone in the browser and
+in the *server's* configured timezone from cron. Join or order on
+`timestamp_unix`, which is timezone-independent and never modified.
 
 **An exported CSV is outside everything this service guarantees.** The log on
 disk is encrypted, mode `0600`, and purged at `max_age_days`; the export is

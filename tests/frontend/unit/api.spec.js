@@ -218,3 +218,68 @@ describe('api.js — password reset + mfa enroll bodies', () => {
     expect(axios.get).toHaveBeenCalledWith('mfa/state')
   })
 })
+
+// ── Monthly reports ──────────────────────────────────────────────────────────
+
+describe('monthly reports', () => {
+  it('lists reports from the admin endpoint', async () => {
+    resolveWith({ reports: [{ period: '2026-07' }] })
+
+    await expect(api.monthlyReports()).resolves.toEqual({ reports: [{ period: '2026-07' }] })
+    expect(axios.get).toHaveBeenCalledWith('admin/reports')
+  })
+
+  it('downloads by POST, identified by period, as a blob', async () => {
+    const blob = new Blob(['csv'])
+    axios.post.mockResolvedValue({ data: blob })
+
+    await expect(api.downloadMonthlyReport({ period: '2026-07' })).resolves.toBe(blob)
+
+    const [url, body, config] = axios.post.mock.calls[0]
+    expect(url).toBe('admin/reports/download')
+    expect(body).toEqual({ period: '2026-07' })
+    expect(config).toEqual({ responseType: 'blob' })
+  })
+
+  it('forwards step-up fields only when present', async () => {
+    axios.post.mockResolvedValue({ data: new Blob(['csv']) })
+
+    await api.downloadMonthlyReport({ period: '2026-07', stepup_password: 'pw', stepup_code: '123456' })
+
+    expect(axios.post.mock.calls[0][1]).toEqual({
+      period: '2026-07', stepup_password: 'pw', stepup_code: '123456',
+    })
+  })
+
+  /**
+   * responseType 'blob' applies to ERROR bodies too. StepUpDialog reads
+   * err.response.data.data to show "Invalid code" and let the user retry; if
+   * the body stays a Blob that is undefined and a simple typo closes the dialog
+   * with a generic "Unknown error".
+   */
+  it('decodes a Blob error body back to JSON so step-up errors survive', async () => {
+    const errorBlob = new Blob([JSON.stringify({ data: { code: 'Invalid code' } })])
+    axios.post.mockRejectedValue({ response: { status: 422, data: errorBlob } })
+
+    await expect(api.downloadMonthlyReport({ period: '2026-07' })).rejects.toMatchObject({
+      response: { status: 422, data: { data: { code: 'Invalid code' } } },
+    })
+  })
+
+  it('leaves a non-JSON error body untouched rather than inventing a shape', async () => {
+    const notJson = new Blob(['<html>502 Bad Gateway</html>'])
+    axios.post.mockRejectedValue({ response: { status: 502, data: notJson } })
+
+    await expect(api.downloadMonthlyReport({ period: '2026-07' })).rejects.toMatchObject({
+      response: { status: 502 },
+    })
+  })
+
+  it('passes through a non-Blob error unchanged', async () => {
+    axios.post.mockRejectedValue({ response: { status: 422, data: { data: { code: 'nope' } } } })
+
+    await expect(api.downloadMonthlyReport({ period: '2026-07' })).rejects.toMatchObject({
+      response: { data: { data: { code: 'nope' } } },
+    })
+  })
+})

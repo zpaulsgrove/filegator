@@ -223,13 +223,17 @@ class AdminController
         // a plaintext CSV that outlives `max_age_days`. Record who pulled it
         // and over what span, so the bulk read is not itself invisible.
         $actor = $this->auth->user();
+        // WARNING, not the INFO default: production pins the Monolog handler at
+        // WARNING, so an INFO line here would be discarded on every real
+        // deployment — i.e. the record of who pulled 30 days of everyone's
+        // activity would exist only in development.
         $this->logger->log(sprintf(
             'Audit log read by %s: %d events, from=%s to=%s',
             $actor ? $actor->getUsername() : 'unknown',
             count($events),
             $request->input('from') ?: '-',
             $request->input('to') ?: '-'
-        ));
+        ), \Monolog\Logger::WARNING);
 
         return $response->json(['events' => $events]);
     }

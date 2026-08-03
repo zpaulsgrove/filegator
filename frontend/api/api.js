@@ -188,6 +188,61 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  monthlyReports() {
+    // Admin-only. Metadata for the reports written by the cron job
+    // (`php bin/filegator report:monthly`) — period, event count, coverage,
+    // size. Never event data; the CSV itself only comes from the download call
+    // below, which is authenticated, step-up gated and logged.
+    return new Promise((resolve, reject) => {
+      axios.get('admin/reports')
+        .then(res => resolve(res.data.data))
+        .catch(error => reject(error))
+    })
+  },
+  downloadMonthlyReport(params) {
+    // POST, not GET, and deliberately so: the backend route is a POST because
+    // GET is CSRF-exempt and SameSite=Lax cookies ride a top-level cross-site
+    // navigation, which would let another site force this download into an
+    // admin's Downloads folder.
+    //
+    // Identified by PERIOD rather than a filename or id — user input never
+    // reaches the server's filesystem.
+    return new Promise((resolve, reject) => {
+      const body = { period: params.period }
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+
+      axios.post('admin/reports/download', body, { responseType: 'blob' })
+        .then(res => resolve(res.data))
+        // responseType 'blob' applies to ERROR bodies too, so a 422 from the
+        // step-up gate arrives as a Blob and `error.response.data.data` — which
+        // StepUpDialog reads to show "Invalid code" and let the user retry — is
+        // undefined. Without this the dialog reports a generic "Unknown error"
+        // and closes on a simple typo. Decode it back to the normal JSON shape
+        // before rejecting, so the blob stays only for the success path.
+        .catch(error => {
+          const payload = error && error.response && error.response.data
+          if (!(payload instanceof Blob)) return reject(error)
+
+          // FileReader rather than Blob.text(): the latter is absent in older
+          // Safari (and in jsdom), and this runs on the error path where
+          // failing to decode would hide the very message the user needs.
+          const reader = new FileReader()
+          reader.onload = () => {
+            try {
+              error.response.data = JSON.parse(reader.result)
+            } catch (e) {
+              // Not JSON (a proxy error page, say) — leave the original error
+              // untouched rather than inventing a shape.
+            }
+            reject(error)
+          }
+          reader.onerror = () => reject(error)
+          reader.readAsText(payload)
+        })
+    })
+  },
   deleteUser(params) {
     return new Promise((resolve, reject) => {
       const body = {}

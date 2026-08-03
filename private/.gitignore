@@ -9,3 +9,6 @@
 /audit_log.jsonl
 /audit_log.jsonl.pruned
 /logs/*.log
+/reports
+/reports_encryption.key
+/report_state.json

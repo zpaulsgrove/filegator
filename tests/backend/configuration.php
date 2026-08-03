@@ -151,7 +151,33 @@ return [
             'config' => [
                 'log_file' => TEST_TMP_PATH.'audit_log.jsonl',
                 'key_path' => TEST_TMP_PATH.'audit_encryption.key',
-                'max_age_days' => 30,
+                // Mirrors the shipped default. Below 32 the monthly report
+                // cannot cover a 31-day month.
+                'max_age_days' => 40,
+            ],
+        ],
+        'Filegator\Services\Audit\ReportStore' => [
+            'handler' => '\Filegator\Services\Audit\ReportStore',
+            'config' => [
+                'dir' => TEST_TMP_PATH.'reports',
+                'key_path' => TEST_TMP_PATH.'reports_encryption.key',
+                'max_age_days' => 100,
+                'max_count' => 24,
+            ],
+        ],
+        'Filegator\Services\Audit\MonthlyReport' => [
+            'handler' => '\Filegator\Services\Audit\MonthlyReport',
+            'config' => [
+                'enabled' => true,
+                'state_file' => TEST_TMP_PATH.'report_state.json',
+                'backfill_months' => 1,
+                // Individual tests override this to exercise the blocked and
+                // partial-coverage paths.
+                'require_full_coverage' => true,
+                'max_events' => 250000,
+                'max_attempts' => 10,
+                'notify_max_attempts' => 3,
+                'report_url_base' => 'https://files.example.com/',
             ],
         ],
         'Filegator\Services\Router\Router' => [

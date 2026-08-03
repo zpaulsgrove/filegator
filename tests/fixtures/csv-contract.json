@@ -1,0 +1,1399 @@
+{
+    "contract_version": 1,
+    "_comment": "Shared JS<->PHP CSV contract. Inputs/outputs are hex so NUL, BOM, lone CR and U+2028 survive JSON + editors + git diffs unambiguously. Expectations derive from the ECMA-262 \\s set, not from either implementation.",
+    "columns": [
+        "timestamp_unix",
+        "timestamp_iso",
+        "timestamp_local",
+        "user",
+        "role",
+        "action",
+        "path",
+        "folder",
+        "detail"
+    ],
+    "bom_hex": "EFBBBF",
+    "eol_hex": "0D0A",
+    "counts": {
+        "sanitize": 33,
+        "field": 9,
+        "folder_of": 7,
+        "sorted_rows": 2,
+        "codepoints": 269
+    },
+    "sanitize": [
+        {
+            "name": "tab before =",
+            "in_hex": "093d312b31",
+            "out_hex": "27093d312b31"
+        },
+        {
+            "name": "lf before =",
+            "in_hex": "0a3d312b31",
+            "out_hex": "270a3d312b31"
+        },
+        {
+            "name": "cr before =",
+            "in_hex": "0d3d312b31",
+            "out_hex": "270d3d312b31"
+        },
+        {
+            "name": "vt before =",
+            "in_hex": "0b3d312b31",
+            "out_hex": "270b3d312b31"
+        },
+        {
+            "name": "ff before =",
+            "in_hex": "0c3d312b31",
+            "out_hex": "270c3d312b31"
+        },
+        {
+            "name": "space before =",
+            "in_hex": "203d312b31",
+            "out_hex": "27203d312b31"
+        },
+        {
+            "name": "nul before =",
+            "in_hex": "003d312b31",
+            "out_hex": "27003d312b31"
+        },
+        {
+            "name": "nbsp before =",
+            "in_hex": "c2a03d312b31",
+            "out_hex": "27c2a03d312b31"
+        },
+        {
+            "name": "ogham before =",
+            "in_hex": "e19a803d312b31",
+            "out_hex": "27e19a803d312b31"
+        },
+        {
+            "name": "enquad before =",
+            "in_hex": "e280803d312b31",
+            "out_hex": "27e280803d312b31"
+        },
+        {
+            "name": "hairsp before =",
+            "in_hex": "e2808a3d312b31",
+            "out_hex": "27e2808a3d312b31"
+        },
+        {
+            "name": "lsep before =",
+            "in_hex": "e280a83d312b31",
+            "out_hex": "27e280a83d312b31"
+        },
+        {
+            "name": "psep before =",
+            "in_hex": "e280a93d312b31",
+            "out_hex": "27e280a93d312b31"
+        },
+        {
+            "name": "nnbsp before =",
+            "in_hex": "e280af3d312b31",
+            "out_hex": "27e280af3d312b31"
+        },
+        {
+            "name": "medmath before =",
+            "in_hex": "e2819f3d312b31",
+            "out_hex": "27e2819f3d312b31"
+        },
+        {
+            "name": "ideosp before =",
+            "in_hex": "e380803d312b31",
+            "out_hex": "27e380803d312b31"
+        },
+        {
+            "name": "bom before =",
+            "in_hex": "efbbbf3d312b31",
+            "out_hex": "27efbbbf3d312b31"
+        },
+        {
+            "name": "bare eq",
+            "in_hex": "3d312b31",
+            "out_hex": "273d312b31"
+        },
+        {
+            "name": "bare plus",
+            "in_hex": "2b31",
+            "out_hex": "272b31"
+        },
+        {
+            "name": "bare minus",
+            "in_hex": "2d31",
+            "out_hex": "272d31"
+        },
+        {
+            "name": "bare at",
+            "in_hex": "4053554d28413129",
+            "out_hex": "274053554d28413129"
+        },
+        {
+            "name": "bare dde",
+            "in_hex": "3d636d647c27202f632063616c6327214131",
+            "out_hex": "273d636d647c27202f632063616c6327214131"
+        },
+        {
+            "name": "NEL 0085 is NOT js-ws",
+            "in_hex": "c2853d31",
+            "out_hex": "c2853d31"
+        },
+        {
+            "name": "mongolian 180E not ws",
+            "in_hex": "e1a08e3d31",
+            "out_hex": "e1a08e3d31"
+        },
+        {
+            "name": "zwsp 200B not ws",
+            "in_hex": "e2808b3d31",
+            "out_hex": "e2808b3d31"
+        },
+        {
+            "name": "word-joiner 2060 not ws",
+            "in_hex": "e281a03d31",
+            "out_hex": "e281a03d31"
+        },
+        {
+            "name": "sigil not leading",
+            "in_hex": "613d31",
+            "out_hex": "613d31"
+        },
+        {
+            "name": "path with equals",
+            "in_hex": "2f7265706f7274732f71313d66696e616c2e706466",
+            "out_hex": "2f7265706f7274732f71313d66696e616c2e706466"
+        },
+        {
+            "name": "hyphen mid-word",
+            "in_hex": "612d62",
+            "out_hex": "612d62"
+        },
+        {
+            "name": "empty",
+            "in_hex": "",
+            "out_hex": ""
+        },
+        {
+            "name": "plain user",
+            "in_hex": "616c696365",
+            "out_hex": "616c696365"
+        },
+        {
+            "name": "invalid utf8 then formula",
+            "in_hex": "3d312b31ff",
+            "out_hex": "273d312b31ff",
+            "php_only": true
+        },
+        {
+            "name": "invalid utf8 leading",
+            "in_hex": "ff3d312b31",
+            "out_hex": "ff3d312b31",
+            "php_only": true
+        }
+    ],
+    "field": [
+        {
+            "name": "sanitise-then-quote",
+            "in_hex": "3d612c62",
+            "out_hex": "22273d612c6222"
+        },
+        {
+            "name": "quote doubling",
+            "in_hex": "612262",
+            "out_hex": "226122226222"
+        },
+        {
+            "name": "embedded newline",
+            "in_hex": "610a62",
+            "out_hex": "22610a6222"
+        },
+        {
+            "name": "embedded cr",
+            "in_hex": "610d62",
+            "out_hex": "22610d6222"
+        },
+        {
+            "name": "comma only",
+            "in_hex": "612c62",
+            "out_hex": "22612c6222"
+        },
+        {
+            "name": "plain passthrough",
+            "in_hex": "616c696365",
+            "out_hex": "616c696365"
+        },
+        {
+            "name": "null becomes empty",
+            "in_hex": "",
+            "out_hex": ""
+        },
+        {
+            "name": "formula no metachar",
+            "in_hex": "3d312b31",
+            "out_hex": "273d312b31"
+        },
+        {
+            "name": "quote and sigil",
+            "in_hex": "3d226122",
+            "out_hex": "22273d222261222222"
+        }
+    ],
+    "folder_of": [
+        {
+            "in": "/a/b/c.txt",
+            "out": "/a/b"
+        },
+        {
+            "in": "/a/b.txt",
+            "out": "/a"
+        },
+        {
+            "in": "/x.txt",
+            "out": "/"
+        },
+        {
+            "in": "",
+            "out": "/"
+        },
+        {
+            "in": "noslash",
+            "out": "/"
+        },
+        {
+            "in": "/",
+            "out": "/"
+        },
+        {
+            "in": "/deep/nest/ed/f.txt",
+            "out": "/deep/nest/ed"
+        }
+    ],
+    "sorted_rows": [
+        {
+            "counts": {
+                "a": 2,
+                "B": 2,
+                "_": 2,
+                "C": 5
+            },
+            "out": [
+                {
+                    "key": "C",
+                    "count": 5
+                },
+                {
+                    "key": "B",
+                    "count": 2
+                },
+                {
+                    "key": "_",
+                    "count": 2
+                },
+                {
+                    "key": "a",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "_comment": "astral vs BMP: pins UTF-16 code-unit order, which raw strcmp/UTF-8 byte order gets wrong",
+            "counts": {
+                "Ａ": 2,
+                "𝐀": 2,
+                "a": 3
+            },
+            "out": [
+                {
+                    "key": "a",
+                    "count": 3
+                },
+                {
+                    "key": "𝐀",
+                    "count": 2
+                },
+                {
+                    "key": "Ａ",
+                    "count": 2
+                }
+            ]
+        }
+    ],
+    "codepoints": [
+        {
+            "cp": 0,
+            "guarded": true
+        },
+        {
+            "cp": 1,
+            "guarded": false
+        },
+        {
+            "cp": 2,
+            "guarded": false
+        },
+        {
+            "cp": 3,
+            "guarded": false
+        },
+        {
+            "cp": 4,
+            "guarded": false
+        },
+        {
+            "cp": 5,
+            "guarded": false
+        },
+        {
+            "cp": 6,
+            "guarded": false
+        },
+        {
+            "cp": 7,
+            "guarded": false
+        },
+        {
+            "cp": 8,
+            "guarded": false
+        },
+        {
+            "cp": 9,
+            "guarded": true
+        },
+        {
+            "cp": 10,
+            "guarded": true
+        },
+        {
+            "cp": 11,
+            "guarded": true
+        },
+        {
+            "cp": 12,
+            "guarded": true
+        },
+        {
+            "cp": 13,
+            "guarded": true
+        },
+        {
+            "cp": 14,
+            "guarded": false
+        },
+        {
+            "cp": 15,
+            "guarded": false
+        },
+        {
+            "cp": 16,
+            "guarded": false
+        },
+        {
+            "cp": 17,
+            "guarded": false
+        },
+        {
+            "cp": 18,
+            "guarded": false
+        },
+        {
+            "cp": 19,
+            "guarded": false
+        },
+        {
+            "cp": 20,
+            "guarded": false
+        },
+        {
+            "cp": 21,
+            "guarded": false
+        },
+        {
+            "cp": 22,
+            "guarded": false
+        },
+        {
+            "cp": 23,
+            "guarded": false
+        },
+        {
+            "cp": 24,
+            "guarded": false
+        },
+        {
+            "cp": 25,
+            "guarded": false
+        },
+        {
+            "cp": 26,
+            "guarded": false
+        },
+        {
+            "cp": 27,
+            "guarded": false
+        },
+        {
+            "cp": 28,
+            "guarded": false
+        },
+        {
+            "cp": 29,
+            "guarded": false
+        },
+        {
+            "cp": 30,
+            "guarded": false
+        },
+        {
+            "cp": 31,
+            "guarded": false
+        },
+        {
+            "cp": 32,
+            "guarded": true
+        },
+        {
+            "cp": 33,
+            "guarded": false
+        },
+        {
+            "cp": 34,
+            "guarded": false
+        },
+        {
+            "cp": 35,
+            "guarded": false
+        },
+        {
+            "cp": 36,
+            "guarded": false
+        },
+        {
+            "cp": 37,
+            "guarded": false
+        },
+        {
+            "cp": 38,
+            "guarded": false
+        },
+        {
+            "cp": 39,
+            "guarded": false
+        },
+        {
+            "cp": 40,
+            "guarded": false
+        },
+        {
+            "cp": 41,
+            "guarded": false
+        },
+        {
+            "cp": 42,
+            "guarded": false
+        },
+        {
+            "cp": 43,
+            "guarded": true
+        },
+        {
+            "cp": 44,
+            "guarded": false
+        },
+        {
+            "cp": 45,
+            "guarded": true
+        },
+        {
+            "cp": 46,
+            "guarded": false
+        },
+        {
+            "cp": 47,
+            "guarded": false
+        },
+        {
+            "cp": 48,
+            "guarded": false
+        },
+        {
+            "cp": 49,
+            "guarded": false
+        },
+        {
+            "cp": 50,
+            "guarded": false
+        },
+        {
+            "cp": 51,
+            "guarded": false
+        },
+        {
+            "cp": 52,
+            "guarded": false
+        },
+        {
+            "cp": 53,
+            "guarded": false
+        },
+        {
+            "cp": 54,
+            "guarded": false
+        },
+        {
+            "cp": 55,
+            "guarded": false
+        },
+        {
+            "cp": 56,
+            "guarded": false
+        },
+        {
+            "cp": 57,
+            "guarded": false
+        },
+        {
+            "cp": 58,
+            "guarded": false
+        },
+        {
+            "cp": 59,
+            "guarded": false
+        },
+        {
+            "cp": 60,
+            "guarded": false
+        },
+        {
+            "cp": 61,
+            "guarded": true
+        },
+        {
+            "cp": 62,
+            "guarded": false
+        },
+        {
+            "cp": 63,
+            "guarded": false
+        },
+        {
+            "cp": 64,
+            "guarded": true
+        },
+        {
+            "cp": 65,
+            "guarded": false
+        },
+        {
+            "cp": 66,
+            "guarded": false
+        },
+        {
+            "cp": 67,
+            "guarded": false
+        },
+        {
+            "cp": 68,
+            "guarded": false
+        },
+        {
+            "cp": 69,
+            "guarded": false
+        },
+        {
+            "cp": 70,
+            "guarded": false
+        },
+        {
+            "cp": 71,
+            "guarded": false
+        },
+        {
+            "cp": 72,
+            "guarded": false
+        },
+        {
+            "cp": 73,
+            "guarded": false
+        },
+        {
+            "cp": 74,
+            "guarded": false
+        },
+        {
+            "cp": 75,
+            "guarded": false
+        },
+        {
+            "cp": 76,
+            "guarded": false
+        },
+        {
+            "cp": 77,
+            "guarded": false
+        },
+        {
+            "cp": 78,
+            "guarded": false
+        },
+        {
+            "cp": 79,
+            "guarded": false
+        },
+        {
+            "cp": 80,
+            "guarded": false
+        },
+        {
+            "cp": 81,
+            "guarded": false
+        },
+        {
+            "cp": 82,
+            "guarded": false
+        },
+        {
+            "cp": 83,
+            "guarded": false
+        },
+        {
+            "cp": 84,
+            "guarded": false
+        },
+        {
+            "cp": 85,
+            "guarded": false
+        },
+        {
+            "cp": 86,
+            "guarded": false
+        },
+        {
+            "cp": 87,
+            "guarded": false
+        },
+        {
+            "cp": 88,
+            "guarded": false
+        },
+        {
+            "cp": 89,
+            "guarded": false
+        },
+        {
+            "cp": 90,
+            "guarded": false
+        },
+        {
+            "cp": 91,
+            "guarded": false
+        },
+        {
+            "cp": 92,
+            "guarded": false
+        },
+        {
+            "cp": 93,
+            "guarded": false
+        },
+        {
+            "cp": 94,
+            "guarded": false
+        },
+        {
+            "cp": 95,
+            "guarded": false
+        },
+        {
+            "cp": 96,
+            "guarded": false
+        },
+        {
+            "cp": 97,
+            "guarded": false
+        },
+        {
+            "cp": 98,
+            "guarded": false
+        },
+        {
+            "cp": 99,
+            "guarded": false
+        },
+        {
+            "cp": 100,
+            "guarded": false
+        },
+        {
+            "cp": 101,
+            "guarded": false
+        },
+        {
+            "cp": 102,
+            "guarded": false
+        },
+        {
+            "cp": 103,
+            "guarded": false
+        },
+        {
+            "cp": 104,
+            "guarded": false
+        },
+        {
+            "cp": 105,
+            "guarded": false
+        },
+        {
+            "cp": 106,
+            "guarded": false
+        },
+        {
+            "cp": 107,
+            "guarded": false
+        },
+        {
+            "cp": 108,
+            "guarded": false
+        },
+        {
+            "cp": 109,
+            "guarded": false
+        },
+        {
+            "cp": 110,
+            "guarded": false
+        },
+        {
+            "cp": 111,
+            "guarded": false
+        },
+        {
+            "cp": 112,
+            "guarded": false
+        },
+        {
+            "cp": 113,
+            "guarded": false
+        },
+        {
+            "cp": 114,
+            "guarded": false
+        },
+        {
+            "cp": 115,
+            "guarded": false
+        },
+        {
+            "cp": 116,
+            "guarded": false
+        },
+        {
+            "cp": 117,
+            "guarded": false
+        },
+        {
+            "cp": 118,
+            "guarded": false
+        },
+        {
+            "cp": 119,
+            "guarded": false
+        },
+        {
+            "cp": 120,
+            "guarded": false
+        },
+        {
+            "cp": 121,
+            "guarded": false
+        },
+        {
+            "cp": 122,
+            "guarded": false
+        },
+        {
+            "cp": 123,
+            "guarded": false
+        },
+        {
+            "cp": 124,
+            "guarded": false
+        },
+        {
+            "cp": 125,
+            "guarded": false
+        },
+        {
+            "cp": 126,
+            "guarded": false
+        },
+        {
+            "cp": 127,
+            "guarded": false
+        },
+        {
+            "cp": 128,
+            "guarded": false
+        },
+        {
+            "cp": 129,
+            "guarded": false
+        },
+        {
+            "cp": 130,
+            "guarded": false
+        },
+        {
+            "cp": 131,
+            "guarded": false
+        },
+        {
+            "cp": 132,
+            "guarded": false
+        },
+        {
+            "cp": 133,
+            "guarded": false
+        },
+        {
+            "cp": 134,
+            "guarded": false
+        },
+        {
+            "cp": 135,
+            "guarded": false
+        },
+        {
+            "cp": 136,
+            "guarded": false
+        },
+        {
+            "cp": 137,
+            "guarded": false
+        },
+        {
+            "cp": 138,
+            "guarded": false
+        },
+        {
+            "cp": 139,
+            "guarded": false
+        },
+        {
+            "cp": 140,
+            "guarded": false
+        },
+        {
+            "cp": 141,
+            "guarded": false
+        },
+        {
+            "cp": 142,
+            "guarded": false
+        },
+        {
+            "cp": 143,
+            "guarded": false
+        },
+        {
+            "cp": 144,
+            "guarded": false
+        },
+        {
+            "cp": 145,
+            "guarded": false
+        },
+        {
+            "cp": 146,
+            "guarded": false
+        },
+        {
+            "cp": 147,
+            "guarded": false
+        },
+        {
+            "cp": 148,
+            "guarded": false
+        },
+        {
+            "cp": 149,
+            "guarded": false
+        },
+        {
+            "cp": 150,
+            "guarded": false
+        },
+        {
+            "cp": 151,
+            "guarded": false
+        },
+        {
+            "cp": 152,
+            "guarded": false
+        },
+        {
+            "cp": 153,
+            "guarded": false
+        },
+        {
+            "cp": 154,
+            "guarded": false
+        },
+        {
+            "cp": 155,
+            "guarded": false
+        },
+        {
+            "cp": 156,
+            "guarded": false
+        },
+        {
+            "cp": 157,
+            "guarded": false
+        },
+        {
+            "cp": 158,
+            "guarded": false
+        },
+        {
+            "cp": 159,
+            "guarded": false
+        },
+        {
+            "cp": 160,
+            "guarded": true
+        },
+        {
+            "cp": 161,
+            "guarded": false
+        },
+        {
+            "cp": 162,
+            "guarded": false
+        },
+        {
+            "cp": 163,
+            "guarded": false
+        },
+        {
+            "cp": 164,
+            "guarded": false
+        },
+        {
+            "cp": 165,
+            "guarded": false
+        },
+        {
+            "cp": 166,
+            "guarded": false
+        },
+        {
+            "cp": 167,
+            "guarded": false
+        },
+        {
+            "cp": 168,
+            "guarded": false
+        },
+        {
+            "cp": 169,
+            "guarded": false
+        },
+        {
+            "cp": 170,
+            "guarded": false
+        },
+        {
+            "cp": 171,
+            "guarded": false
+        },
+        {
+            "cp": 172,
+            "guarded": false
+        },
+        {
+            "cp": 173,
+            "guarded": false
+        },
+        {
+            "cp": 174,
+            "guarded": false
+        },
+        {
+            "cp": 175,
+            "guarded": false
+        },
+        {
+            "cp": 176,
+            "guarded": false
+        },
+        {
+            "cp": 177,
+            "guarded": false
+        },
+        {
+            "cp": 178,
+            "guarded": false
+        },
+        {
+            "cp": 179,
+            "guarded": false
+        },
+        {
+            "cp": 180,
+            "guarded": false
+        },
+        {
+            "cp": 181,
+            "guarded": false
+        },
+        {
+            "cp": 182,
+            "guarded": false
+        },
+        {
+            "cp": 183,
+            "guarded": false
+        },
+        {
+            "cp": 184,
+            "guarded": false
+        },
+        {
+            "cp": 185,
+            "guarded": false
+        },
+        {
+            "cp": 186,
+            "guarded": false
+        },
+        {
+            "cp": 187,
+            "guarded": false
+        },
+        {
+            "cp": 188,
+            "guarded": false
+        },
+        {
+            "cp": 189,
+            "guarded": false
+        },
+        {
+            "cp": 190,
+            "guarded": false
+        },
+        {
+            "cp": 191,
+            "guarded": false
+        },
+        {
+            "cp": 192,
+            "guarded": false
+        },
+        {
+            "cp": 193,
+            "guarded": false
+        },
+        {
+            "cp": 194,
+            "guarded": false
+        },
+        {
+            "cp": 195,
+            "guarded": false
+        },
+        {
+            "cp": 196,
+            "guarded": false
+        },
+        {
+            "cp": 197,
+            "guarded": false
+        },
+        {
+            "cp": 198,
+            "guarded": false
+        },
+        {
+            "cp": 199,
+            "guarded": false
+        },
+        {
+            "cp": 200,
+            "guarded": false
+        },
+        {
+            "cp": 201,
+            "guarded": false
+        },
+        {
+            "cp": 202,
+            "guarded": false
+        },
+        {
+            "cp": 203,
+            "guarded": false
+        },
+        {
+            "cp": 204,
+            "guarded": false
+        },
+        {
+            "cp": 205,
+            "guarded": false
+        },
+        {
+            "cp": 206,
+            "guarded": false
+        },
+        {
+            "cp": 207,
+            "guarded": false
+        },
+        {
+            "cp": 208,
+            "guarded": false
+        },
+        {
+            "cp": 209,
+            "guarded": false
+        },
+        {
+            "cp": 210,
+            "guarded": false
+        },
+        {
+            "cp": 211,
+            "guarded": false
+        },
+        {
+            "cp": 212,
+            "guarded": false
+        },
+        {
+            "cp": 213,
+            "guarded": false
+        },
+        {
+            "cp": 214,
+            "guarded": false
+        },
+        {
+            "cp": 215,
+            "guarded": false
+        },
+        {
+            "cp": 216,
+            "guarded": false
+        },
+        {
+            "cp": 217,
+            "guarded": false
+        },
+        {
+            "cp": 218,
+            "guarded": false
+        },
+        {
+            "cp": 219,
+            "guarded": false
+        },
+        {
+            "cp": 220,
+            "guarded": false
+        },
+        {
+            "cp": 221,
+            "guarded": false
+        },
+        {
+            "cp": 222,
+            "guarded": false
+        },
+        {
+            "cp": 223,
+            "guarded": false
+        },
+        {
+            "cp": 224,
+            "guarded": false
+        },
+        {
+            "cp": 225,
+            "guarded": false
+        },
+        {
+            "cp": 226,
+            "guarded": false
+        },
+        {
+            "cp": 227,
+            "guarded": false
+        },
+        {
+            "cp": 228,
+            "guarded": false
+        },
+        {
+            "cp": 229,
+            "guarded": false
+        },
+        {
+            "cp": 230,
+            "guarded": false
+        },
+        {
+            "cp": 231,
+            "guarded": false
+        },
+        {
+            "cp": 232,
+            "guarded": false
+        },
+        {
+            "cp": 233,
+            "guarded": false
+        },
+        {
+            "cp": 234,
+            "guarded": false
+        },
+        {
+            "cp": 235,
+            "guarded": false
+        },
+        {
+            "cp": 236,
+            "guarded": false
+        },
+        {
+            "cp": 237,
+            "guarded": false
+        },
+        {
+            "cp": 238,
+            "guarded": false
+        },
+        {
+            "cp": 239,
+            "guarded": false
+        },
+        {
+            "cp": 240,
+            "guarded": false
+        },
+        {
+            "cp": 241,
+            "guarded": false
+        },
+        {
+            "cp": 242,
+            "guarded": false
+        },
+        {
+            "cp": 243,
+            "guarded": false
+        },
+        {
+            "cp": 244,
+            "guarded": false
+        },
+        {
+            "cp": 245,
+            "guarded": false
+        },
+        {
+            "cp": 246,
+            "guarded": false
+        },
+        {
+            "cp": 247,
+            "guarded": false
+        },
+        {
+            "cp": 248,
+            "guarded": false
+        },
+        {
+            "cp": 249,
+            "guarded": false
+        },
+        {
+            "cp": 250,
+            "guarded": false
+        },
+        {
+            "cp": 251,
+            "guarded": false
+        },
+        {
+            "cp": 252,
+            "guarded": false
+        },
+        {
+            "cp": 253,
+            "guarded": false
+        },
+        {
+            "cp": 254,
+            "guarded": false
+        },
+        {
+            "cp": 255,
+            "guarded": false
+        },
+        {
+            "cp": 5760,
+            "guarded": true
+        },
+        {
+            "cp": 8192,
+            "guarded": true
+        },
+        {
+            "cp": 8197,
+            "guarded": true
+        },
+        {
+            "cp": 8202,
+            "guarded": true
+        },
+        {
+            "cp": 8203,
+            "guarded": false
+        },
+        {
+            "cp": 8232,
+            "guarded": true
+        },
+        {
+            "cp": 8233,
+            "guarded": true
+        },
+        {
+            "cp": 8239,
+            "guarded": true
+        },
+        {
+            "cp": 8288,
+            "guarded": false
+        },
+        {
+            "cp": 8287,
+            "guarded": true
+        },
+        {
+            "cp": 12288,
+            "guarded": true
+        },
+        {
+            "cp": 65279,
+            "guarded": true
+        },
+        {
+            "cp": 6158,
+            "guarded": false
+        }
+    ],
+    "_encoding_note": "Hex is UTF-8 BYTES. PHP sanitises byte strings; JS sanitises UTF-16 code-unit strings, so JS consumers MUST decode these as UTF-8 (not latin1) or multi-byte chars arrive as separate characters and the guard appears to miss. Vectors flagged php_only hold invalid UTF-8, which a JS string cannot represent — they exist to pin PHP against the /u fail-open and are skipped by the Jest side."
+}

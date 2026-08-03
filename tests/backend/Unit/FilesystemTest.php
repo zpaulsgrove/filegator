@@ -1036,16 +1036,16 @@ class FilesystemTest extends TestCase
         $this->assertTrue($ret);
         $this->assertEquals(
             '755',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/child')
         );
         $this->assertEquals(
             '755',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/a.txt')
         );
         // nested file under the sub-folder is reached too
         $this->assertEquals(
             '755',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/child/b.txt')
         );
     }
 
@@ -1072,16 +1072,16 @@ class FilesystemTest extends TestCase
         // the sub-folder was chmod'd...
         $this->assertEquals(
             '700',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/child')
         );
         // ...but the files were skipped (left at their pinned mode).
         $this->assertEquals(
             '600',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/a.txt')
         );
         $this->assertEquals(
             '600',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child/b.txt')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/child/b.txt')
         );
     }
 
@@ -1091,7 +1091,7 @@ class FilesystemTest extends TestCase
         $this->storage->createDir('/parent', 'child');
         $this->storage->createFile('/parent', 'a.txt');
 
-        $childBefore = substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3);
+        $childBefore = $this->permissionsOf(TEST_REPOSITORY.'/parent/child');
 
         // Exercises the $recursive == 'files' branch (file matches, sub-folder
         // skipped). 0700 keeps the target dir traversable — chmod() also applies
@@ -1103,12 +1103,12 @@ class FilesystemTest extends TestCase
         // The file was chmod'd...
         $this->assertEquals(
             '700',
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/a.txt')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/a.txt')
         );
         // ...but the sub-folder was left untouched (files-only mode).
         $this->assertEquals(
             $childBefore,
-            substr(sprintf('%o', fileperms(TEST_REPOSITORY.'/parent/child')), -3)
+            $this->permissionsOf(TEST_REPOSITORY.'/parent/child')
         );
     }
 

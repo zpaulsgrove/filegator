@@ -239,6 +239,155 @@ class AuditMailer implements Service
         return true;
     }
 
+    /**
+     * Notify that a monthly activity report is available (or explain why it is
+     * not). Carries NO event data.
+     *
+     * Returns a TRI-STATE, unlike sendWeeklyDigest which returns true whatever
+     * the transport did: true = accepted by the mailer, false = transport
+     * failed and a retry may help, null = no mailer configured, so retrying is
+     * pointless. MonthlyReport keys its capped retry on exactly that
+     * distinction — with a plain bool it would either never retry or retry
+     * forever on the default install, which ships an empty recipient.
+     *
+     * The report itself is deliberately NOT attached. It is a decrypted month
+     * of usernames and full paths; mailing it would put that in inboxes, in the
+     * mail provider, and in backups, indefinitely — well beyond the audit log's
+     * own retention. Admins download it through the authenticated, logged
+     * route instead.
+     */
+    public function sendReportReady(array $meta): ?bool
+    {
+        if (! $this->shouldSend()) {
+            return null;
+        }
+
+        $period = (string) ($meta['period'] ?? '');
+        $generated = (bool) ($meta['generated'] ?? true);
+        $events = (int) ($meta['events'] ?? 0);
+        $coverage = (string) ($meta['coverage'] ?? 'complete');
+
+        // The event count stays OUT of the subject. The recipient is a single
+        // configured address — often a shared mailbox with no account and no
+        // role — and a subject line also lands in mail-server logs, lock-screen
+        // previews and mailbox search indexes. "The report is ready" carries
+        // the same operational signal.
+        $subject = $generated
+            ? sprintf('Monthly activity report ready — %s%s', $period, $coverage === 'complete' ? '' : ' (INCOMPLETE)')
+            : sprintf('Monthly activity report NOT generated — %s', $period);
+
+        $text = $this->renderReportReadyText($period, $generated, $events, $coverage, $meta);
+        $html = $this->renderReportReadyHtml($period, $generated, $events, $coverage, $meta);
+
+        $ok = $this->mailer->send(
+            (string) $this->config['recipient'],
+            $subject,
+            $text,
+            $html,
+            (string) $this->config['from_email'],
+            isset($this->config['from_name']) ? (string) $this->config['from_name'] : null
+        );
+
+        $this->logger->log(
+            sprintf('Monthly report notification %s: %s', $ok ? 'sent' : 'failed', $period),
+            $ok ? \Monolog\Logger::INFO : \Monolog\Logger::WARNING
+        );
+
+        return (bool) $ok;
+    }
+
+    protected function renderReportReadyText(
+        string $period,
+        bool $generated,
+        int $events,
+        string $coverage,
+        array $meta
+    ): string {
+        $lines = [sprintf('Monthly file-activity report for the %s.', $this->appLabel()), ''];
+
+        if ($generated) {
+            $lines[] = sprintf('Period:  %s', $period);
+            $lines[] = sprintf('Events:  %d', $events);
+            $lines[] = sprintf('Coverage: %s', $coverage);
+            if ($coverage !== 'complete') {
+                $lines[] = '';
+                $lines[] = 'WARNING: this report does not cover the whole month. The audit log\'s';
+                $lines[] = 'retention window (max_age_days) had already discarded its earliest days.';
+            }
+            $lines[] = '';
+            foreach (($meta['by_action'] ?? []) as $action => $count) {
+                $lines[] = sprintf('  %-8s %d', $action, $count);
+            }
+        } else {
+            $lines[] = sprintf('No report was generated for %s.', $period);
+            $lines[] = '';
+            $lines[] = 'The audit log\'s retention window cannot cover that month. Raise';
+            $lines[] = 'AuditLog max_age_days to at least 32 (40 recommended) and re-run';
+            $lines[] = '`php bin/filegator report:preflight` to confirm.';
+        }
+
+        $lines[] = '';
+        $lines[] = ! empty($meta['url_base'])
+            ? sprintf('Download: %s#/reports (sign in as an admin)', rtrim((string) $meta['url_base'], '/').'/')
+            : 'Sign in as an admin and open Reports to download it.';
+        $lines[] = '';
+        $lines[] = 'The report contains usernames and full file paths. It is stored encrypted';
+        $lines[] = 'on the server and is deliberately not attached to this message.';
+        $lines[] = '';
+        $lines[] = $this->timestampLine();
+
+        return $this->joinLines($lines);
+    }
+
+    protected function renderReportReadyHtml(
+        string $period,
+        bool $generated,
+        int $events,
+        string $coverage,
+        array $meta
+    ): string {
+        $appLabel = htmlspecialchars($this->appLabel(), ENT_QUOTES, 'UTF-8');
+        $periodEsc = htmlspecialchars($period, ENT_QUOTES, 'UTF-8');
+        $ts = htmlspecialchars($this->timestampLine(), ENT_QUOTES, 'UTF-8');
+
+        if (! $generated) {
+            $body = '<p>No report was generated for <strong>'.$periodEsc.'</strong>.</p>'
+                .'<p>The audit log&rsquo;s retention window cannot cover that month. Raise '
+                .'<code>AuditLog max_age_days</code> to at least 32 (40 recommended), then run '
+                .'<code>php bin/filegator report:preflight</code>.</p>';
+        } else {
+            $rows = '';
+            foreach (($meta['by_action'] ?? []) as $action => $count) {
+                $rows .= '<tr><td>'.htmlspecialchars((string) $action, ENT_QUOTES, 'UTF-8').'</td>'
+                    .'<td style="text-align:right">'.(int) $count.'</td></tr>';
+            }
+            $warning = $coverage === 'complete' ? '' :
+                '<p style="color:#b45309"><strong>This report does not cover the whole month.</strong> '
+                .'The audit log&rsquo;s retention window had already discarded its earliest days.</p>';
+
+            $body = '<p>Period <strong>'.$periodEsc.'</strong> &mdash; '.$events.' event'
+                .($events === 1 ? '' : 's').', coverage '.htmlspecialchars($coverage, ENT_QUOTES, 'UTF-8').'.</p>'
+                .$warning
+                .'<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;font-size:13px">'
+                .'<thead style="background:#f9fafb;text-align:left"><tr><th>Action</th><th>Count</th></tr></thead>'
+                .'<tbody>'.$rows.'</tbody></table>';
+        }
+
+        $link = ! empty($meta['url_base'])
+            ? '<p><a href="'.htmlspecialchars(rtrim((string) $meta['url_base'], '/').'/#/reports', ENT_QUOTES, 'UTF-8').'">Sign in and open Reports</a></p>'
+            : '<p>Sign in as an admin and open Reports to download it.</p>';
+
+        return <<<HTML
+<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1f2937;font-size:14px;line-height:1.5">
+<p>Monthly file-activity report for the <strong>{$appLabel}</strong>.</p>
+{$body}
+{$link}
+<p style="color:#6b7280;font-size:12px">The report contains usernames and full file paths. It is stored encrypted on the server and is deliberately not attached to this message.</p>
+<p style="color:#6b7280;font-size:12px">{$ts}</p>
+</body></html>
+HTML;
+    }
+
     protected function renderDigestText(array $rows): string
     {
         $lines = [

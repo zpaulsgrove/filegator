@@ -198,6 +198,40 @@ class AuditLog implements Service
      *
      * @return array<int,array<string,mixed>>
      */
+    /**
+     * Whether the service is registered and usable. PHP-DI autowires an
+     * un-init()'d instance when a deployment does not register the block, and
+     * query() then returns [] — indistinguishable from "no activity". Callers
+     * that must not confuse "disabled" with "quiet month" check this first.
+     */
+    public function isConfigured(): bool
+    {
+        return $this->logFile !== null && $this->crypto !== null;
+    }
+
+    /**
+     * The oldest timestamp query() can still return.
+     *
+     * query() applies this cutoff unconditionally, BEFORE any `from` filter, so
+     * a caller asking for a window that starts earlier silently gets a short
+     * answer. Anything reporting over a fixed period (a calendar month, say)
+     * must compare its window start against this and say so when it falls
+     * outside, rather than emitting a quietly truncated report.
+     *
+     * Exposed rather than having callers re-read `max_age_days` from their own
+     * config: two copies of that number would drift the first time one is
+     * edited.
+     */
+    public function retentionCutoff(): int
+    {
+        return $this->now() - ($this->maxAgeDays * 86400);
+    }
+
+    public function getMaxAgeDays(): int
+    {
+        return $this->maxAgeDays;
+    }
+
     public function query(array $filters = []): array
     {
         if (! $this->logFile || ! $this->crypto || ! is_file($this->logFile)) {

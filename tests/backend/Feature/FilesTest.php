@@ -1570,8 +1570,7 @@ class FilesTest extends TestCase
         ]);
 
         $this->assertOk();
-        clearstatcache();
-        $this->assertSame('0600', substr(sprintf('%o', fileperms($target)), -4));
+        $this->assertSame('0600', $this->permissionsOf($target, 4));
     }
 
     public function testChmodItemsRejectedWithoutChmodPermission()

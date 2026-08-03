@@ -371,10 +371,17 @@ export default {
     },
     // Count map -> [{key, count}], busiest first, ties broken alphabetically
     // so the report is stable between pulls.
+    // Count DESC, then key ASC by CODE UNIT — deliberately not localeCompare.
+    // The server-side producer (backend/Services/Audit/ActivityCsv) has to sort
+    // identically, and no PHP comparison reproduces localeCompare: it orders
+    // ['a','B','_','C'] as ['_','a','B','C'] where strcmp gives ['B','C','_','a'].
+    // A code-unit compare is the one ordering both languages agree on, and it
+    // drops an ICU dependency from the report's row order. Pinned by the shared
+    // vectors in tests/fixtures/csv-contract.json.
     toSortedRows(counts) {
       return Object.keys(counts)
         .map(key => ({ key, count: counts[key] }))
-        .sort((a, b) => (b.count - a.count) || a.key.localeCompare(b.key))
+        .sort((a, b) => (b.count - a.count) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     },
     // Immediate parent directory of a root-relative audit path. Grouping at
     // the parent (rather than the top-level segment) keeps the rollup lossless.

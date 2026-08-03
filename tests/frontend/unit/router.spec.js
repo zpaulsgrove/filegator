@@ -19,6 +19,7 @@ jest.mock('@/views/Browser.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Users.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/FolderAccess.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Audit.vue', () => ({ __esModule: true, default: {} }))
+jest.mock('@/views/Reports.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Login.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/Security.vue', () => ({ __esModule: true, default: {} }))
 jest.mock('@/views/ForgotPassword.vue', () => ({ __esModule: true, default: {} }))
@@ -70,6 +71,20 @@ describe('router access guards', () => {
 
     it('guest is bounced to "/"', () => {
       expect(runGuard('audit-log', 'guest')).toHaveBeenCalledWith('/')
+    })
+  })
+
+  describe('/reports (admin only)', () => {
+    it('admin is allowed straight through', () => {
+      expect(runGuard('reports', 'admin')).toHaveBeenCalledWith()
+    })
+
+    it('non-admin user is bounced to "/"', () => {
+      expect(runGuard('reports', 'user')).toHaveBeenCalledWith('/')
+    })
+
+    it('guest is bounced to "/"', () => {
+      expect(runGuard('reports', 'guest')).toHaveBeenCalledWith('/')
     })
   })
 

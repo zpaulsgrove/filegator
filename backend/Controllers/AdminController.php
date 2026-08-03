@@ -203,17 +203,35 @@ class AdminController
      *
      * Admin-only (route roles => ['admin']): the entries expose client paths
      * and source IPs (PII), so the read is gated to administrators.
+     *
+     * Two consumers: the Audit Log view (unfiltered) and the Reports view,
+     * which passes a 30-day `from`/`to` window and exports the result as CSV.
+     * Do not "optimise" the unfiltered path on the assumption of a single
+     * caller, and keep `from`/`to` working — the report depends on them.
      */
     public function auditLog(Request $request, Response $response, AuditLog $audit)
     {
-        return $response->json([
-            'events' => $audit->query([
-                'action' => $request->input('action'),
-                'user' => $request->input('user'),
-                'from' => $request->input('from'),
-                'to' => $request->input('to'),
-            ]),
+        $events = $audit->query([
+            'action' => $request->input('action'),
+            'user' => $request->input('user'),
+            'from' => $request->input('from'),
+            'to' => $request->input('to'),
         ]);
+
+        // Reading this endpoint is how 30 days of every user's file activity
+        // leaves the encrypted store — the Reports view exports it verbatim to
+        // a plaintext CSV that outlives `max_age_days`. Record who pulled it
+        // and over what span, so the bulk read is not itself invisible.
+        $actor = $this->auth->user();
+        $this->logger->log(sprintf(
+            'Audit log read by %s: %d events, from=%s to=%s',
+            $actor ? $actor->getUsername() : 'unknown',
+            count($events),
+            $request->input('from') ?: '-',
+            $request->input('to') ?: '-'
+        ));
+
+        return $response->json(['events' => $events]);
     }
 
     public function storeUser(User $user, Request $request, Response $response, Validator $validator, AuditMailer $audit, MfaService $mfa, MfaLockout $lockout, Config $config)

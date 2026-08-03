@@ -54,6 +54,11 @@ function mountBrowser(opts = {}) {
       isImage: opts.isImage || (() => false),
       isText: opts.isText || (() => false),
       getDownloadLink: p => '/download' + p,
+      // saveBlob moved from Browser.vue into the shared mixin. Unit mounts don't
+      // apply Vue.mixin(shared) (only main.js does), so it must be supplied here
+      // or the jest.spyOn(wrapper.vm, 'saveBlob') calls below have nothing to spy
+      // on. Real behaviour is covered in shared.spec.js.
+      saveBlob: () => {},
     },
     stubs: {
       Menu: true, Pagination: true, Upload: true,

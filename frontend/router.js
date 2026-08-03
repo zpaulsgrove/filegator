@@ -4,6 +4,7 @@ import Browser from './views/Browser.vue'
 import Users from './views/Users.vue'
 import FolderAccess from './views/FolderAccess.vue'
 import Audit from './views/Audit.vue'
+import Reports from './views/Reports.vue'
 import Login from './views/Login.vue'
 import Security from './views/Security.vue'
 import ForgotPassword from './views/ForgotPassword.vue'
@@ -82,6 +83,22 @@ const router = new Router({
       path: '/audit-log',
       name: 'audit-log',
       component: Audit,
+      beforeEnter: (to, from, next) => {
+        if (store.state.user.role == 'admin') {
+          next()
+        } else {
+          next('/')
+        }
+      },
+    },
+    // UX only. The real gate is server-side: Router::init only REGISTERS the
+    // /admin/audit-log route when hasRole() passes, so a non-admin request
+    // 404s before reaching a controller. Bypassing this guard renders an empty
+    // page whose XHR returns nothing.
+    {
+      path: '/reports',
+      name: 'reports',
+      component: Reports,
       beforeEnter: (to, from, next) => {
         if (store.state.user.role == 'admin') {
           next()

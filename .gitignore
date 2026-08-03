@@ -12,8 +12,6 @@
 /tests/backend/tmp/repository/*
 /tests/frontend/e2e/videos/
 /tests/frontend/e2e/screenshots/
-# Exported report CSVs land here during e2e runs and contain client paths.
-/tests/frontend/e2e/downloads/
 
 # Log files
 npm-debug.log*

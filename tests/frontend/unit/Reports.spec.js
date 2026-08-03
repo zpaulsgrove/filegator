@@ -6,8 +6,8 @@
 // assertions driven against computeds/methods rather than the DOM.
 //
 // The CSV block carries the most weight here. The escaping rules are pure
-// functions, so this is where they get exercised properly — the e2e spec only
-// smoke-tests that a file lands on disk.
+// functions, so this is where they belong — an e2e spec could only smoke-test
+// that a file reaches disk, which is a far weaker signal.
 
 import { shallowMount } from '@vue/test-utils'
 import Reports from '@/views/Reports.vue'
@@ -54,6 +54,7 @@ function mountReports(mocks = {}) {
     }, mocks),
     stubs: {
       Menu: true,
+      Pagination: true,
       'b-table': true,
       'b-table-column': true,
       'b-icon': true,
@@ -105,6 +106,43 @@ describe('Reports.vue — the 30-day window', () => {
     expect(to).toBe(FIXED_S)
     expect(wrapper.vm.windowFrom).toBe(from)
     expect(wrapper.vm.windowTo).toBe(to)
+  })
+
+  it('leaves the window untouched when the refresh fails', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_MS)
+    api.auditLog.mockResolvedValue({ events: SAMPLE_EVENTS })
+    const wrapper = mountReports()
+    await flushPromises()
+
+    // A failed refresh must not advance the header/filename past the data
+    // still on screen — otherwise the export is named for a window that was
+    // never successfully fetched.
+    Date.now.mockReturnValue(FIXED_MS + 86400000)
+    api.auditLog.mockRejectedValue(new Error('offline'))
+    wrapper.vm.load()
+    await flushPromises()
+
+    expect(wrapper.vm.windowTo).toBe(FIXED_S)
+    expect(wrapper.vm.events).toEqual(SAMPLE_EVENTS)
+  })
+
+  it('ignores a slow earlier response that lands after a newer one', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_MS)
+    let resolveFirst
+    api.auditLog.mockReturnValueOnce(new Promise(r => { resolveFirst = r }))
+    const wrapper = mountReports()
+
+    // Second request resolves first and wins.
+    api.auditLog.mockResolvedValue({ events: SAMPLE_EVENTS })
+    wrapper.vm.load()
+    await flushPromises()
+    expect(wrapper.vm.events).toEqual(SAMPLE_EVENTS)
+
+    // The stale first request now lands; it must not clobber the newer data
+    // nor flip isLoading while it is the older generation.
+    resolveFirst({ events: [] })
+    await flushPromises()
+    expect(wrapper.vm.events).toEqual(SAMPLE_EVENTS)
   })
 
   it('re-pins the window on refresh', async () => {
@@ -231,6 +269,41 @@ describe('Reports.vue — rollups', () => {
     expect(wrapper.vm.topFolder.count).toBe(2)
     // The backend sorts newest-first, so the last element is the oldest.
     expect(wrapper.vm.oldestEventTs).toBe(100)
+  })
+
+  it('flags when the log covers less than the requested period', async () => {
+    // AuditLog::query applies its own max_age_days cutoff, so a deployment
+    // retaining 7 days answers a 30-day request with 7. The header and the CSV
+    // filename both name the REQUESTED period, so the shortfall has to be
+    // stated rather than implied.
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_MS)
+    api.auditLog.mockResolvedValue({
+      events: [{ ts: FIXED_S - (3 * 86400), user: 'a', role: 'user', action: 'upload', path: '/a.txt' }],
+    })
+    const w = mountReports()
+    await flushPromises()
+
+    expect(w.vm.coverageLimited).toBe(true)
+  })
+
+  it('does not flag limited coverage when the window is genuinely covered', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(FIXED_MS)
+    api.auditLog.mockResolvedValue({
+      events: [{ ts: FIXED_S - (30 * 86400) + 100, user: 'a', role: 'user', action: 'upload', path: '/a.txt' }],
+    })
+    const w = mountReports()
+    await flushPromises()
+
+    expect(w.vm.coverageLimited).toBe(false)
+  })
+
+  it('does not flag limited coverage on an empty log', async () => {
+    // Nothing to be limited about — the empty-state copy covers this case.
+    api.auditLog.mockResolvedValue({ events: [] })
+    const w = mountReports()
+    await flushPromises()
+
+    expect(w.vm.coverageLimited).toBe(false)
   })
 
   it('survives an empty log without throwing', async () => {

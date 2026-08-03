@@ -19,9 +19,10 @@
       folder name as a b-table-column `field` (lodash get() treats "." and
       "[" specially).
 
-  The raw event list is deliberately NEVER rendered — only the rollup is. The
-  three tables are bounded by distinct actions (<= 10), users and folders, not
-  by event count, so a 100k-event window still renders a small page.
+  The raw event list is deliberately NEVER rendered — only the rollup is, so
+  row count scales with distinct actions (<= 10) / users / folders rather than
+  with event count. Distinct folders is still unbounded on a busy deployment,
+  which is why the user and folder tables can be paginated.
 -->
 <template>
   <div class="container">
@@ -37,8 +38,14 @@
         </p>
       </div>
       <div class="is-flex">
+        <!-- The by-user and by-folder tables are bounded by distinct users and
+             folders, not by event count — but "distinct folders touched" is
+             still unbounded on a busy deployment, and the shipped
+             config.pagination default is '' (i.e. paging OFF). Offer the same
+             control the Audit Log page does so an admin can cap the rows. -->
+        <Pagination :perpage="perPage" @selected="perPage = $event" />
         <a
-          style="margin-right: 1rem"
+          style="margin-right: 1rem; margin-left: 1rem"
           data-test="report-refresh"
           @click="load"
         >
@@ -93,6 +100,9 @@
 
       <p v-if="oldestEventTs" class="has-text-grey is-size-7" data-test="report-oldest">
         {{ lang('Oldest event: {0}', formatDate(oldestEventTs)) }}
+        <span v-if="coverageLimited" data-test="report-coverage-limited">
+          — {{ lang('the log holds less than the full period; older activity has been purged or predates the log.') }}
+        </span>
       </p>
       <p v-if="!totalEvents && !isLoading" class="has-text-grey is-size-7" data-test="report-unconfigured-note">
         {{ lang('If the audit log service is not configured, no activity is recorded.') }}
@@ -184,6 +194,7 @@
 <script>
 import moment from 'moment'
 import Menu from './partials/Menu'
+import Pagination from './partials/Pagination'
 import api from '../api/api'
 
 // The report window. Kept as a constant so the label, the request and the
@@ -239,7 +250,7 @@ const CSV_SIGIL = /^[\s\u0000]*[=+\-@]/
 
 export default {
   name: 'Reports',
-  components: { Menu },
+  components: { Menu, Pagination },
   data() {
     return {
       perPage: this.$store.state.config.pagination[0],
@@ -247,6 +258,8 @@ export default {
       folderPage: 1,
       isLoading: false,
       events: [],
+      // Monotonic request counter; see load().
+      requestGeneration: 0,
       // Pinned at request time, not derived from Date.now() in a computed, so
       // the header, the rollup and the CSV filename all describe one snapshot
       // instead of drifting apart as the clock moves.
@@ -305,6 +318,19 @@ export default {
       if (! this.windowFrom || ! this.windowTo) return ''
       return this.lang('Report period: {0} to {1}', this.formatDate(this.windowFrom), this.formatDate(this.windowTo))
     },
+    // The 30 days we ASK for is not necessarily the 30 days the log can
+    // answer for: AuditLog::query applies its own max_age_days cutoff, so a
+    // deployment retaining 7 days silently returns 7. The window label and the
+    // CSV filename both describe the REQUESTED period, so say plainly when the
+    // data behind them is narrower rather than letting the header imply
+    // coverage that does not exist.
+    //
+    // A day of slack avoids crying wolf on a window whose oldest event simply
+    // happens to be recent.
+    coverageLimited() {
+      if (! this.events.length || ! this.windowFrom) return false
+      return this.oldestEventTs > (this.windowFrom + 86400)
+    },
   },
   mounted() {
     this.load()
@@ -318,15 +344,28 @@ export default {
     load() {
       const to = Math.floor(Date.now() / 1000)
       const from = to - (WINDOW_DAYS * 86400)
-      this.windowFrom = from
-      this.windowTo = to
+      // Tag each request so a slow earlier one cannot overwrite a later one's
+      // results, and so only the newest request is allowed to clear the
+      // loading flag. Two clicks of Refresh otherwise race.
+      const generation = ++this.requestGeneration
       this.isLoading = true
       api.auditLog({ from, to })
         .then(ret => {
+          if (generation !== this.requestGeneration) return
+          // Commit the window only alongside the data it describes. Pinning it
+          // up front would leave a failed refresh showing stale events under a
+          // header — and exporting a CSV named for — a window that was never
+          // successfully fetched.
+          this.windowFrom = from
+          this.windowTo = to
           this.events = (ret && ret.events) || []
         })
-        .catch(error => this.handleError(error))
+        .catch(error => {
+          if (generation !== this.requestGeneration) return
+          this.handleError(error)
+        })
         .finally(() => {
+          if (generation !== this.requestGeneration) return
           this.isLoading = false
         })
     },

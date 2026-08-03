@@ -78,13 +78,21 @@ user's current role.
 
 Values are quoted per RFC 4180, and any value whose first meaningful character
 is `=`, `+`, `-`, or `@` is prefixed with an apostrophe so a spreadsheet does
-not evaluate it as a formula. To recover an original value, strip a single
-leading apostrophe **only** when the next character is one of those four or
-whitespace.
+not evaluate it as a formula.
 
-Each read of the log — by the Audit Log view or the Reports export — is
+That prefix is not perfectly reversible, and machine consumers should know it:
+an added apostrophe is indistinguishable from one that was genuinely part of
+the value. Stripping a leading `'` before `=`, `+`, `-`, `@` or whitespace
+recovers every value the guard modified, but it also corrupts the rare value
+that legitimately began with an apostrophe followed by one of those
+characters. The `timestamp_unix` column is never modified, so use it for
+joins and ordering rather than re-parsing text columns.
+
+Fetching the log — by the Audit Log view or by loading the Reports page — is
 recorded in the application log with the requesting administrator and the
-window requested.
+window requested. Note that the CSV is generated in the browser from data
+already fetched, so repeated exports from a single page load produce one log
+entry, not one per download.
 
 ### Disabling
 

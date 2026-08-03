@@ -139,6 +139,7 @@ const data = {
   'No activity in the last 30 days': 'No activity in the last 30 days',
   'Report period: {0} to {1}': 'Report period: {0} to {1}',
   'Oldest event: {0}': 'Oldest event: {0}',
+  'the log holds less than the full period; older activity has been purged or predates the log.': 'the log holds less than the full period; older activity has been purged or predates the log.',
   'Folder counts use the destination path of each action.': 'Folder counts use the destination path of each action.',
   'If the audit log service is not configured, no activity is recorded.': 'If the audit log service is not configured, no activity is recorded.',
   'This exports {0} events, including usernames and full file paths, to an unencrypted file.': 'This exports {0} events, including usernames and full file paths, to an unencrypted file.',

@@ -71,6 +71,53 @@ describe('shared mixin helpers', () => {
     })
   })
 
+  describe('saveBlob', () => {
+    // saveBlob moved here from Browser.vue so the Reports CSV export could reuse
+    // it. Browser.spec.js now mocks it, so this is the only place the real
+    // implementation is exercised.
+    let createObjectURL
+    let revokeObjectURL
+
+    beforeEach(() => {
+      createObjectURL = jest.fn(() => 'blob:fake-url')
+      revokeObjectURL = jest.fn()
+      global.URL.createObjectURL = createObjectURL
+      global.URL.revokeObjectURL = revokeObjectURL
+      document.body.innerHTML = ''
+    })
+
+    it('downloads via a throwaway anchor and cleans up after itself', () => {
+      let clicked = null
+      const click = jest.fn(function () { clicked = { href: this.href, download: this.download } })
+      jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(click)
+
+      m.saveBlob(new Blob(['x']), 'report.csv')
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1)
+      expect(clicked).toEqual({ href: 'blob:fake-url', download: 'report.csv' })
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake-url')
+      // No anchor left behind.
+      expect(document.body.querySelector('a[download]')).toBeNull()
+
+      HTMLAnchorElement.prototype.click.mockRestore()
+    })
+
+    it('revokes the url and removes the anchor even when click() throws', () => {
+      jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {
+        throw new Error('blocked')
+      })
+
+      expect(() => m.saveBlob(new Blob(['x']), 'report.csv')).toThrow('blocked')
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:fake-url')
+      // The anchor must not leak into the DOM on the failure path — this is the
+      // bug that existed while saveBlob lived in Browser.vue (removeChild sat
+      // inside the try, so a throwing click() skipped it).
+      expect(document.body.querySelector('a[download]')).toBeNull()
+
+      HTMLAnchorElement.prototype.click.mockRestore()
+    })
+  })
+
   describe('is / can (role & permission gates)', () => {
     it('is() compares against the store user role', () => {
       const ctx = { $store: { state: { user: { role: 'admin' } } } }

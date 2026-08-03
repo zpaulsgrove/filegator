@@ -586,20 +586,7 @@ export default {
         })
       }
     },
-    saveBlob(blob, filename) {
-      const url = URL.createObjectURL(blob)
-      try {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        a.style.display = 'none'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } finally {
-        URL.revokeObjectURL(url)
-      }
-    },
+    // saveBlob lives in mixins/shared.js — it is also used by the Reports CSV export.
     // Safari (desktop) and any iOS browser can't reliably trigger several programmatic
     // downloads in a row (a download fired after an await loses the user-gesture and is
     // blocked), so callers route those to the server-side zip instead.

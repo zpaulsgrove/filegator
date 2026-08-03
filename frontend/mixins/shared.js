@@ -124,6 +124,29 @@ const funcs = {
     formatDate(timestamp) {
       return moment.unix(timestamp).format(store.state.config.date_format ? store.state.config.date_format : 'MM/DD/YY hh:mm:ss')
     },
+    // Trigger a browser download of an in-memory Blob via a throwaway anchor.
+    // Shared because more than one view needs it (file downloads in Browser,
+    // the CSV export in Reports) and a second copy would drift.
+    //
+    // NOTE for callers: a download fired *after* an await loses the user-gesture
+    // and is blocked by Safari/iOS. Call this synchronously from the click
+    // handler whenever the data is already in memory.
+    saveBlob(blob, filename) {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      try {
+        a.href = url
+        a.download = filename
+        a.style.display = 'none'
+        document.body.appendChild(a)
+        a.click()
+      } finally {
+        // Both cleanups in finally: a throwing click() must not leak the anchor
+        // into the DOM.
+        if (a.parentNode) a.parentNode.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
+    },
     checkUser() {
       api.getUser()
         .then((user) => {

@@ -151,6 +151,7 @@ describe('Menu.vue — admin nav links (is(\'admin\') gating)', () => {
     const wrapper = mountMenu({ role: 'admin' }, role => role === 'admin')
 
     expect(wrapper.find('[data-test="nav-audit-log"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nav-reports"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="nav-users"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="nav-folder-access"]').exists()).toBe(true)
   })
@@ -159,6 +160,7 @@ describe('Menu.vue — admin nav links (is(\'admin\') gating)', () => {
     const wrapper = mountMenu({ role: 'user' }, role => role === 'user')
 
     expect(wrapper.find('[data-test="nav-audit-log"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="nav-reports"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nav-users"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nav-folder-access"]').exists()).toBe(false)
   })

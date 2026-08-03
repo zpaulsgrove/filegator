@@ -776,6 +776,83 @@ class AdminTest extends TestCase
         $this->assertStatus(404);
     }
 
+    public function testAuditLogHonoursFromAndToBounds()
+    {
+        // The Reports view asks for a 30-day window via from/to, so this wiring
+        // is load-bearing for it — previously only the admin gate was covered.
+        $now = time();
+        $this->seedAuditLog([
+            ['ts' => $now - 86400, 'user' => 'john@example.com', 'role' => 'user', 'action' => 'upload', 'path' => '/john/recent.txt', 'detail' => null, 'ip' => '127.0.0.1'],
+            ['ts' => $now - (5 * 86400), 'user' => 'jane@example.com', 'role' => 'user', 'action' => 'delete', 'path' => '/jane/mid.txt', 'detail' => null, 'ip' => '127.0.0.1'],
+            ['ts' => $now - (20 * 86400), 'user' => 'john@example.com', 'role' => 'user', 'action' => 'create', 'path' => '/john/old.txt', 'detail' => null, 'ip' => '127.0.0.1'],
+        ]);
+
+        $this->signIn('admin@example.com', 'admin123');
+
+        $from = $now - (10 * 86400);
+        // Query params ride on the uri, not the body: sendRequest's third
+        // argument becomes the JSON payload, and the router keys off `r`.
+        $this->sendRequest('GET', '/admin/audit-log&from='.$from.'&to='.$now);
+        $this->assertOk();
+
+        $events = $this->decodeResponseJson()['data']['events'];
+        $paths = array_column($events, 'path');
+
+        $this->assertContains('/john/recent.txt', $paths);
+        $this->assertContains('/jane/mid.txt', $paths);
+        // Outside the window on the old side — must not leak in.
+        $this->assertNotContains('/john/old.txt', $paths);
+
+        foreach ($events as $event) {
+            $this->assertGreaterThanOrEqual($from, (int) $event['ts']);
+            $this->assertLessThanOrEqual($now, (int) $event['ts']);
+        }
+    }
+
+    public function testAuditLogReturnsEmptyWhenServiceIsNotConfigured()
+    {
+        // With no log_file the service init()s into its disabled no-op state —
+        // the same state a deployment that never registered the block is in.
+        // The Reports page must render an empty report, not a 500.
+        $this->overrideConfig(['services' => [
+            'Filegator\Services\Audit\AuditLog' => ['config' => [
+                'log_file' => '',
+                'key_path' => '',
+            ]],
+        ]]);
+
+        $this->signIn('admin@example.com', 'admin123');
+        $this->sendRequest('GET', '/admin/audit-log&from='.(time() - 2592000).'&to='.time());
+
+        $this->assertOk();
+        $this->assertSame([], $this->decodeResponseJson()['data']['events']);
+    }
+
+    /**
+     * Replace the audit log on disk with exactly $events, written through a
+     * real AuditLog pointed at the same file/key the app under test uses.
+     *
+     * AdminTest has no per-test audit cleanup of its own (TestCase::setUp
+     * clears audit_state.json but not the log), so without the unlink these
+     * assertions would see whatever the Files/Upload suites left behind in the
+     * same process.
+     */
+    private function seedAuditLog(array $events): void
+    {
+        $logFile = TEST_TMP_PATH.'audit_log.jsonl';
+        $keyPath = TEST_TMP_PATH.'audit_encryption.key';
+        @unlink($logFile);
+        @unlink($logFile.'.pruned');
+
+        $audit = new \Filegator\Services\Audit\AuditLog(
+            new class() implements \Filegator\Services\Logger\LoggerInterface {
+                public function log(string $message, int $level = self::INFO) {}
+            }
+        );
+        $audit->init(['log_file' => $logFile, 'key_path' => $keyPath, 'max_age_days' => 30]);
+        $audit->recordMany($events);
+    }
+
     public function testFolderAccessAuditListsAssignedFolders()
     {
         $this->signIn('admin@example.com', 'admin123');

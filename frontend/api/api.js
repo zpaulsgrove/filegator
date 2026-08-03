@@ -188,6 +188,36 @@ const api = {
         .catch(error => reject(error))
     })
   },
+  monthlyReports() {
+    // Admin-only. Metadata for the reports written by the cron job
+    // (`php bin/filegator report:monthly`) — period, event count, coverage,
+    // size. Never event data; the CSV itself only comes from the download call
+    // below, which is authenticated, step-up gated and logged.
+    return new Promise((resolve, reject) => {
+      axios.get('admin/reports')
+        .then(res => resolve(res.data.data))
+        .catch(error => reject(error))
+    })
+  },
+  downloadMonthlyReport(params) {
+    // POST, not GET, and deliberately so: the backend route is a POST because
+    // GET is CSRF-exempt and SameSite=Lax cookies ride a top-level cross-site
+    // navigation, which would let another site force this download into an
+    // admin's Downloads folder.
+    //
+    // Identified by PERIOD rather than a filename or id — user input never
+    // reaches the server's filesystem.
+    return new Promise((resolve, reject) => {
+      const body = { period: params.period }
+      if (params.stepup_password !== undefined) body.stepup_password = params.stepup_password
+      if (params.stepup_code !== undefined) body.stepup_code = params.stepup_code
+      if (params.stepup_use_backup !== undefined) body.stepup_use_backup = params.stepup_use_backup
+
+      axios.post('admin/reports/download', body, { responseType: 'blob' })
+        .then(res => resolve(res.data))
+        .catch(error => reject(error))
+    })
+  },
   deleteUser(params) {
     return new Promise((resolve, reject) => {
       const body = {}

@@ -167,6 +167,21 @@ class CliKernel
 
         $results = $report->run($options['period'] ?? null, ! empty($options['force']));
 
+        // null means the job could not run at all — a misconfigured AuditLog, or
+        // a state file it cannot open. That must NOT be reported as success:
+        // cron would go green forever while producing no reports, which is the
+        // exact silent failure this entry point exists to prevent. An empty
+        // array is different and legitimate: nothing was due.
+        if ($results === null) {
+            // The specific reason is logged at WARNING by the service — an
+            // unconfigured AuditLog, an unwritable state file, or a --period
+            // that has not closed yet. Naming only one of them here would be
+            // actively misleading, so point at the log that has the real one.
+            fwrite(STDERR, "Could not run. The reason was logged at WARNING — check private/logs/app.log.\n");
+
+            return self::EXIT_MISCONFIGURED;
+        }
+
         if ($results === []) {
             echo "Nothing due.\n";
 

@@ -24,6 +24,10 @@ jest.mock('@/api/api', () => ({
   __esModule: true,
   default: {
     auditLog: jest.fn(),
+    // mounted() loads the server-generated monthly reports too, so every mount
+    // in this file needs these stubbed or the mount itself throws.
+    monthlyReports: jest.fn(),
+    downloadMonthlyReport: jest.fn(),
   },
 }))
 
@@ -80,6 +84,7 @@ const FIXED_S = Math.floor(FIXED_MS / 1000)
 beforeEach(() => {
   jest.clearAllMocks()
   api.auditLog.mockResolvedValue({ events: [] })
+  api.monthlyReports.mockResolvedValue({ reports: [] })
 })
 
 afterEach(() => {
@@ -582,5 +587,84 @@ describe('Reports.vue — download', () => {
     empty.vm.confirmDownload()
     expect(empty.vm.$dialog.confirm).not.toHaveBeenCalled()
     expect(empty.vm.$toast.open).toHaveBeenCalled()
+  })
+})
+
+// ── Monthly reports (server-generated, encrypted at rest) ────────────────────
+//
+// These are the cron-built reports. The list is metadata only; the CSV body is
+// fetched by an explicit, step-up gated POST. Before this section existed the
+// backend route had no caller at all, so the stored reports were unreachable
+// from the UI.
+
+describe('Reports.vue monthly reports', () => {
+  let wrapper
+
+  beforeEach(() => {
+    api.auditLog.mockResolvedValue({ events: [] })
+    api.monthlyReports.mockResolvedValue({
+      reports: [
+        { id: 'a'.repeat(32), period: '2026-07', events: 12, bytes: 900, coverage: 'complete', generated_at: 1785000000, filename: 'filegator-activity-CONFIDENTIAL-2026-07-01-to-2026-07-31.csv' },
+        { id: 'b'.repeat(32), period: '2026-06', events: 4, bytes: 300, coverage: 'partial', generated_at: 1782400000, filename: 'filegator-activity-CONFIDENTIAL-2026-06-01-to-2026-06-30-PARTIAL.csv' },
+      ],
+    })
+    api.downloadMonthlyReport.mockResolvedValue(new Blob(['csv']))
+    wrapper = mountReports()
+  })
+
+  it('lists the stored reports on mount', async () => {
+    await flushPromises()
+
+    expect(api.monthlyReports).toHaveBeenCalled()
+    expect(wrapper.vm.monthlyReports.map(r => r.period)).toEqual(['2026-07', '2026-06'])
+  })
+
+  it('downloads by PERIOD, never by filename or id', async () => {
+    await flushPromises()
+    await wrapper.vm.downloadMonthlyReport('2026-07', {})
+
+    expect(api.downloadMonthlyReport).toHaveBeenCalledWith(
+      expect.objectContaining({ period: '2026-07' })
+    )
+    const sent = api.downloadMonthlyReport.mock.calls[0][0]
+    expect(sent.filename).toBeUndefined()
+    expect(sent.id).toBeUndefined()
+  })
+
+  it('forwards step-up fields to the backend', async () => {
+    await flushPromises()
+    await wrapper.vm.downloadMonthlyReport('2026-07', { stepup_password: 'pw', stepup_code: '123456' })
+
+    expect(api.downloadMonthlyReport).toHaveBeenCalledWith(
+      expect.objectContaining({ stepup_password: 'pw', stepup_code: '123456' })
+    )
+  })
+
+  it('saves the blob under a CONFIDENTIAL filename it builds itself', async () => {
+    await flushPromises()
+    await wrapper.vm.downloadMonthlyReport('2026-07', {})
+
+    expect(wrapper.vm.saveBlob).toHaveBeenCalled()
+    const [, filename] = wrapper.vm.saveBlob.mock.calls[0]
+    // Built locally rather than taken from a response header, so a response
+    // cannot influence what lands in the download attribute.
+    expect(filename).toBe('filegator-activity-CONFIDENTIAL-2026-07.csv')
+  })
+
+  it('clears the in-flight marker even when the download fails', async () => {
+    await flushPromises()
+    api.downloadMonthlyReport.mockRejectedValueOnce(new Error('boom'))
+
+    await expect(wrapper.vm.downloadMonthlyReport('2026-07', {})).rejects.toThrow('boom')
+    expect(wrapper.vm.downloadingPeriod).toBeNull()
+  })
+
+  it('drops report metadata when the view is destroyed', async () => {
+    await flushPromises()
+    expect(wrapper.vm.monthlyReports).toHaveLength(2)
+
+    wrapper.destroy()
+
+    expect(wrapper.vm.monthlyReports).toEqual([])
   })
 })

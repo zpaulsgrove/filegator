@@ -74,3 +74,11 @@ Deferred from the monthly-report PR, with the trigger that should prompt each.
   would still verify, and `index.json` metadata is neither encrypted nor
   authenticated. Low impact while `private/` is trusted; revisit if reports ever
   leave that directory.
+- [ ] **Monolog logs a CRITICAL on every process start.** `Monolog\ErrorHandler`
+  reads the `E_STRICT` constant when building its level map, which modern PHP
+  reports as deprecated, and Monolog's own handler then records it at CRITICAL
+  in `private/logs/app.log`. **Pre-existing and app-wide** — `MonoLogger::init`
+  alone reproduces it, so every web request is affected too, not just the report
+  cron. It is noise in the log operators are told to watch. Fixing it means
+  upgrading Monolog or suppressing at the handler level, so it was left out of
+  the monthly-report change rather than bundled into it.

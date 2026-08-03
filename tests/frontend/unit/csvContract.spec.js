@@ -21,7 +21,13 @@ import contract from '../../fixtures/csv-contract.json'
 
 jest.mock('@/api/api', () => ({
   __esModule: true,
-  default: { auditLog: jest.fn() },
+  default: {
+    auditLog: jest.fn(),
+    // mounted() also loads the server-generated monthly reports; without these
+    // the mount itself throws before any contract assertion runs.
+    monthlyReports: jest.fn(),
+    downloadMonthlyReport: jest.fn(),
+  },
 }))
 
 const APOS = String.fromCharCode(39)
@@ -53,8 +59,11 @@ describe('CSV contract (shared with backend/Services/Audit/ActivityCsv)', () => 
   let vm
 
   beforeEach(() => {
-    // mounted() calls load(); without a resolved promise the mount throws.
-    require('@/api/api').default.auditLog.mockResolvedValue({ events: [] })
+    // mounted() calls load() and loadMonthlyReports(); without resolved
+    // promises the mount throws.
+    const api = require('@/api/api').default
+    api.auditLog.mockResolvedValue({ events: [] })
+    api.monthlyReports.mockResolvedValue({ reports: [] })
     vm = mountReports().vm
   })
 

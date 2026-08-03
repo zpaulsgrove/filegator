@@ -10,6 +10,7 @@
 
 namespace Filegator\Services\Audit;
 
+use Filegator\Config\Config;
 use Filegator\Services\Logger\LoggerInterface;
 use Filegator\Services\Service;
 
@@ -110,12 +111,21 @@ class MonthlyReport implements Service
         AuditLog $audit,
         ReportStore $store,
         AuditMailer $mailer,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        Config $config
     ) {
         $this->audit = $audit;
         $this->store = $store;
         $this->mailer = $mailer;
         $this->logger = $logger;
+
+        // The APP's timezone, from the top-level config key — not from this
+        // service's own config block, which nothing sets. Reading it there meant
+        // month boundaries and timestamp_local were always UTC no matter what
+        // the deployment was configured for, so on a non-UTC install the last
+        // hours of a local month landed in the NEXT month's report. Config is
+        // pre-seeded in the container, so this resolves in HTTP and CLI alike.
+        $this->timezone = (string) $config->get('timezone', 'UTC');
     }
 
     public function init(array $config = [])
@@ -126,6 +136,9 @@ class MonthlyReport implements Service
         if (! empty($config['state_file'])) {
             $this->stateFile = (string) $config['state_file'];
         }
+        // Per-service override, for the rare deployment that wants reports on a
+        // different calendar to the rest of the app. Normally unset, and the
+        // app timezone from the constructor applies.
         if (! empty($config['timezone'])) {
             $this->timezone = (string) $config['timezone'];
         }
@@ -155,12 +168,23 @@ class MonthlyReport implements Service
     }
 
     /**
-     * Generate any due periods. Returns a result array per period handled.
+     * Generate any due periods.
+     *
+     * Returns a result array per period handled — possibly empty, meaning
+     * "nothing was due", which is the normal outcome on ~30 days out of 31.
+     *
+     * Returns NULL for "could not run at all": misconfiguration, or a state
+     * file that cannot be opened. The distinction is load-bearing. Callers must
+     * treat null as a failure, because an empty array and a broken deployment
+     * previously looked identical, and cron would report success forever while
+     * producing no reports — precisely the silent failure this job exists to
+     * avoid. Lock contention deliberately returns an empty array instead: it is
+     * a normal, self-correcting outcome, not a fault.
      *
      * @param string|null $only  restrict to one "YYYY-MM" period
      * @param bool        $force regenerate even if already marked ok
      */
-    public function run(?string $only = null, bool $force = false): array
+    public function run(?string $only = null, bool $force = false): ?array
     {
         if (! $this->isConfigured()) {
             $this->logger->log(
@@ -168,7 +192,7 @@ class MonthlyReport implements Service
                 \Monolog\Logger::WARNING
             );
 
-            return [];
+            return null;
         }
 
         if (! $this->audit->isConfigured()) {
@@ -181,7 +205,7 @@ class MonthlyReport implements Service
                 \Monolog\Logger::WARNING
             );
 
-            return [];
+            return null;
         }
 
         $fh = @fopen($this->stateFile, 'c+b');
@@ -191,12 +215,14 @@ class MonthlyReport implements Service
                 \Monolog\Logger::WARNING
             );
 
-            return [];
+            return null;
         }
 
         // Non-blocking: a second concurrent run skips rather than queueing
         // behind our handle.
         if (! flock($fh, LOCK_EX | LOCK_NB)) {
+            // Another run holds the lock. Normal and self-correcting, so this
+            // is "nothing to do", not a failure.
             fclose($fh);
 
             return [];
@@ -204,6 +230,42 @@ class MonthlyReport implements Service
 
         try {
             $state = $this->readState($fh);
+
+            if ($only !== null) {
+                // An explicit --period must still obey the same two guards the
+                // scheduled path obeys, or it becomes a foot-gun rather than a
+                // convenience.
+                //
+                // 1. Only a COMPLETE, PAST month. Reporting the current one
+                //    writes an artifact over an unfinished window, labels it
+                //    coverage=complete, and marks the period ok — after which
+                //    duePeriods() skips it forever and the real month is never
+                //    reported at all.
+                if ($only >= $this->periodFor(0)) {
+                    $this->logger->log(
+                        "MonthlyReport: refusing to report {$only} — it is the current or a future month, "
+                        .'and the window has not closed yet',
+                        \Monolog\Logger::WARNING
+                    );
+
+                    return null;
+                }
+
+                // 2. Do not silently regenerate. A second report for a month
+                //    mints a new id, leaves the previous ciphertext indexed, and
+                //    orphans any link an admin is already holding. --force is
+                //    what the docs say does this, so make that true.
+                if (! $force && ! $this->needsGeneration($state['periods'][$only] ?? null)) {
+                    $status = $state['periods'][$only]['status'] ?? 'unknown';
+                    $this->logger->log(
+                        "MonthlyReport: {$only} is already {$status}; pass --force to regenerate it",
+                        \Monolog\Logger::WARNING
+                    );
+
+                    return [];
+                }
+            }
+
             $periods = $only !== null ? [$only] : $this->duePeriods($state, $force);
 
             $results = [];
@@ -425,12 +487,29 @@ class MonthlyReport implements Service
      */
     protected function notify(string $period, array &$entry, array &$state, bool $generated): void
     {
-        $attempts = $entry['notify_attempts'] ?? 0;
-        if ($attempts >= $this->notifyMaxAttempts || ! empty($entry['notified_at'])) {
+        // Tracked per KIND of news, not as a single "was this period notified"
+        // flag. One month can legitimately warrant two different notices: first
+        // "not generated" while retention was too short, then "ready" once the
+        // operator raises max_age_days. A bare notified_at suppressed the
+        // second, so nobody ever learned the report existed — which defeats the
+        // entire recovery path.
+        $subject = $generated ? 'ready' : 'blocked';
+        $delivered = $entry['notified'] ?? [];
+
+        if (in_array($subject, $delivered, true)) {
             return;
         }
 
-        $entry['notify_attempts'] = $attempts + 1;
+        // Attempts are counted per subject too, so a mail server that was down
+        // during the "blocked" notice has not silently spent the budget for the
+        // "ready" one, which is the notice that actually matters.
+        $attempts = $entry['notify_attempts'][$subject] ?? 0;
+
+        if ($attempts >= $this->notifyMaxAttempts) {
+            return;
+        }
+
+        $entry['notify_attempts'][$subject] = $attempts + 1;
 
         $sent = $this->mailer->sendReportReady([
             'period' => $period,
@@ -442,14 +521,18 @@ class MonthlyReport implements Service
         ]);
 
         if ($sent === true) {
+            $delivered[] = $subject;
+            $entry['notified'] = $delivered;
             $entry['notified_at'] = $this->now();
         } elseif ($sent === null) {
-            // Mailer not configured: not a failure to retry, and not worth
-            // logging every day forever.
-            $entry['notified_at'] = 0;
+            // No mailer configured. Retrying cannot help, so record it as
+            // delivered rather than warning about it every single day.
+            $delivered[] = $subject;
+            $entry['notified'] = $delivered;
         } else {
             $this->logger->log(
-                "MonthlyReport: {$period} notification failed (attempt {$entry['notify_attempts']}); "
+                "MonthlyReport: {$period} notification failed "
+                ."(attempt {$entry['notify_attempts'][$subject]}); "
                 .'the report itself is available for download',
                 \Monolog\Logger::WARNING
             );

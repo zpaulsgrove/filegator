@@ -10,6 +10,7 @@
 
 namespace Tests\Unit;
 
+use Filegator\Config\Config;
 use Filegator\Services\Audit\AuditLog;
 use Filegator\Services\Audit\AuditMailer;
 use Filegator\Services\Audit\MonthlyReport;
@@ -122,19 +123,19 @@ class MonthlyReportTest extends TestCase
         return $auditMailer;
     }
 
-    protected function makeReport(array $config = [], $audit = null, $store = null): ClockableMonthlyReport
+    protected function makeReport(array $config = [], $audit = null, $store = null, string $appTimezone = 'UTC'): ClockableMonthlyReport
     {
         $report = new ClockableMonthlyReport(
             $audit ?? $this->makeAudit(),
             $store ?? $this->makeStore(),
             $this->makeMailer(),
-            $this->logger
+            $this->logger,
+            new Config(['timezone' => $appTimezone])
         );
         $report->fakeNow = $this->nowTs();
         $report->init(array_merge([
             'enabled' => true,
             'state_file' => TEST_TMP_PATH.'report_state.json',
-            'timezone' => 'UTC',
             'backfill_months' => 1,
             'require_full_coverage' => true,
         ], $config));
@@ -186,6 +187,36 @@ class MonthlyReportTest extends TestCase
         [$augFrom] = $report->windowFor('2026-08');
 
         $this->assertSame($augFrom, $julyTo + 1);
+    }
+
+    /**
+     * The timezone must come from the APP's top-level config, not from this
+     * service's own config block — which neither configuration_sample.php nor
+     * the test config sets. Reading it there made month boundaries silently
+     * always-UTC, so on a non-UTC deployment the last hours of a local month
+     * fell into the next month's report.
+     */
+    public function testWindowUsesTheAppTimezoneWithNoServiceOverride()
+    {
+        $report = $this->makeReport([], null, null, 'America/Chicago');
+        [$from, $to] = $report->windowFor('2026-07');
+
+        $tz = new \DateTimeZone('America/Chicago');
+        $this->assertSame('2026-07-01 00:00:00', (new \DateTimeImmutable('@'.$from))->setTimezone($tz)->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-31 23:59:59', (new \DateTimeImmutable('@'.$to))->setTimezone($tz)->format('Y-m-d H:i:s'));
+        // Not UTC midnight — that is exactly the bug this pins.
+        $this->assertNotSame('2026-07-01 00:00:00', gmdate('Y-m-d H:i:s', $from));
+    }
+
+    public function testServiceConfigCanOverrideTheAppTimezone()
+    {
+        $report = $this->makeReport(['timezone' => 'Asia/Tokyo'], null, null, 'America/Chicago');
+        [$from] = $report->windowFor('2026-07');
+
+        $this->assertSame(
+            '2026-07-01 00:00:00',
+            (new \DateTimeImmutable('@'.$from))->setTimezone(new \DateTimeZone('Asia/Tokyo'))->format('Y-m-d H:i:s')
+        );
     }
 
     public function testWindowRespectsANonUtcTimezone()
@@ -263,6 +294,8 @@ class MonthlyReportTest extends TestCase
         flock($held, LOCK_UN);
         fclose($held);
 
+        // [] not null: contention is normal and self-correcting, so the CLI
+        // must exit 0 rather than alerting.
         $this->assertSame([], $results);
         $this->assertSame([], InMemoryMailer::$messages);
     }
@@ -339,6 +372,72 @@ class MonthlyReportTest extends TestCase
         ));
     }
 
+    /**
+     * --period must not silently regenerate a completed month. Doing so mints a
+     * new report id and orphans any link an admin is already holding, and both
+     * usage() and the docs say --force is what does that.
+     */
+    public function testExplicitPeriodDoesNotRegenerateWithoutForce()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        $store = $this->makeStore();
+
+        $report = $this->makeReport([], $audit, $store);
+        $report->run();
+        $firstId = $report->readStateFile()['periods']['2026-07']['report_id'];
+
+        $again = $this->makeReport([], $audit, $store)->run('2026-07');
+
+        $this->assertSame([], $again);
+        $this->assertSame($firstId, $report->readStateFile()['periods']['2026-07']['report_id']);
+    }
+
+    public function testExplicitPeriodWithForceReplacesRatherThanAccumulates()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        $store = $this->makeStore();
+
+        $report = $this->makeReport([], $audit, $store);
+        $report->run();
+        $firstId = $report->readStateFile()['periods']['2026-07']['report_id'];
+
+        $this->makeReport([], $audit, $store)->run('2026-07', true);
+
+        // Exactly one report for the period, and the superseded ciphertext is
+        // gone rather than left on disk holding the same PII twice.
+        $this->assertCount(1, $store->listReports());
+        $this->assertFileDoesNotExist(TEST_TMP_PATH.'reports/'.$firstId.'.csv.enc');
+        $this->assertCount(1, glob(TEST_TMP_PATH.'reports/*.csv.enc'));
+    }
+
+    /**
+     * Reporting the current month writes an artifact over a window that has not
+     * closed, labels it complete, and marks the period ok — after which the
+     * scheduled path skips it forever and the real month is never reported.
+     */
+    public function testRefusesTheCurrentMonth()
+    {
+        $audit = $this->makeAudit();
+        $report = $this->makeReport([], $audit);
+
+        $this->assertNull($report->run('2026-08'));
+        $this->assertSame([], glob(TEST_TMP_PATH.'reports/*.csv.enc'));
+        $this->assertNotEmpty(array_filter(
+            $this->logger->messagesAtLeast(\Monolog\Logger::WARNING),
+            function ($m) { return strpos($m, 'has not closed yet') !== false; }
+        ));
+    }
+
+    public function testRefusesAFutureMonth()
+    {
+        $report = $this->makeReport([], $this->makeAudit());
+
+        $this->assertNull($report->run('2027-01'));
+        $this->assertSame([], glob(TEST_TMP_PATH.'reports/*.csv.enc'));
+    }
+
     // ── Coverage ─────────────────────────────────────────────────────────────
 
     public function testBlocksWhenRetentionCannotCoverTheMonth()
@@ -380,6 +479,15 @@ class MonthlyReportTest extends TestCase
 
         $this->assertSame(MonthlyReport::STATUS_OK, $results[0]['status']);
         $this->assertSame('complete', $fixed->readStateFile()['periods']['2026-07']['coverage']);
+
+        // ...and the operator must actually be TOLD the report now exists. The
+        // blocked run already sent a "not generated" notice; if that marks the
+        // period notified, the success notice is suppressed and nobody ever
+        // learns the report is available.
+        $subjects = array_column(InMemoryMailer::$messages, 'subject');
+        $this->assertNotEmpty(array_filter($subjects, function ($s) {
+            return strpos($s, 'ready') !== false;
+        }), 'the success notification must not be suppressed by the earlier blocked notice');
     }
 
     /**
@@ -464,7 +572,10 @@ class MonthlyReportTest extends TestCase
         $unconfigured = new AuditLog($this->logger);
         $report = $this->makeReport([], $unconfigured);
 
-        $this->assertSame([], $report->run());
+        // null, not [] — the CLI maps null to a non-zero exit. Returning an
+        // empty array here would be indistinguishable from "nothing due", and
+        // cron would report success forever while producing no reports.
+        $this->assertNull($report->run());
         $this->assertSame([], glob(TEST_TMP_PATH.'reports/*.csv.enc'));
         $this->assertNotEmpty(array_filter(
             $this->logger->messagesAtLeast(\Monolog\Logger::WARNING),
@@ -477,7 +588,7 @@ class MonthlyReportTest extends TestCase
         $report = $this->makeReport(['enabled' => false]);
 
         $this->assertFalse($report->isConfigured());
-        $this->assertSame([], $report->run());
+        $this->assertNull($report->run());
     }
 
     /**

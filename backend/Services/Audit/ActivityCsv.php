@@ -141,10 +141,20 @@ class ActivityCsv
     /**
      * Count map to rows, ordered count DESC then key ASC.
      *
-     * strcmp, not a locale-aware compare: Reports.vue used localeCompare, which
-     * orders ['a','B','_','C'] as ['_','a','B','C'] where every reasonable PHP
-     * port gives ['B','C','_','a']. Both sides now use a code-unit comparison
-     * so the two are provably identical, and row order no longer depends on ICU.
+     * Not a locale-aware compare: Reports.vue used localeCompare, which orders
+     * ['a','B','_','C'] as ['_','a','B','C'] where a byte compare gives
+     * ['B','C','_','a']. Both sides now use a code-unit comparison, so row
+     * order no longer depends on ICU.
+     *
+     * Ties are broken on UTF-16BE bytes rather than raw strcmp, because
+     * JavaScript's `<` compares UTF-16 CODE UNITS while strcmp compares UTF-8
+     * bytes (i.e. code-point order). Those agree across the whole BMP and
+     * diverge above U+FFFF, where a surrogate pair leads with 0xD800-0xDBFF and
+     * therefore sorts BEFORE U+E000-U+FFFF in JS but after them in PHP.
+     * Measured: ['\u{FF21}', '\u{1D400}'] sorts astral-first in JS and
+     * astral-last under strcmp. Converting to UTF-16BE first makes the two
+     * genuinely identical over all inputs, which is what the shared fixture
+     * asserts.
      */
     public function sortedRows(array $counts): array
     {
@@ -156,10 +166,25 @@ class ActivityCsv
         }
 
         usort($rows, function ($a, $b) {
-            return ($b['count'] <=> $a['count']) ?: strcmp($a['key'], $b['key']);
+            return ($b['count'] <=> $a['count'])
+                ?: strcmp($this->utf16SortKey($a['key']), $this->utf16SortKey($b['key']));
         });
 
         return $rows;
+    }
+
+    /**
+     * UTF-16BE encoding of a key, for JS-identical ordering.
+     *
+     * Falls back to the raw bytes if the value is not valid UTF-8 — invalid
+     * input should still sort deterministically rather than throw, and audit
+     * usernames reaching here are already valid by the time they are stored.
+     */
+    protected function utf16SortKey(string $key): string
+    {
+        $converted = @mb_convert_encoding($key, 'UTF-16BE', 'UTF-8');
+
+        return $converted === false ? $key : $converted;
     }
 
     public function header(): string

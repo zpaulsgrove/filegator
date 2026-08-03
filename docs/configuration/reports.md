@@ -49,11 +49,32 @@ fixing. Run it again after changing `max_age_days`.
 | Command | Purpose |
 |---|---|
 | `report:monthly` | Generate any due months and notify. `--period=YYYY-MM` restricts to one month; `--force` regenerates a month already marked complete. |
+
+`--period` obeys the same two guards the scheduled path does. It refuses the
+current or a future month — reporting an unfinished window would store an
+artifact labelled complete and then permanently skip the real month — and
+without `--force` it will not regenerate a month that already succeeded, since
+that mints a new report id and orphans any link an admin holds. With `--force`
+the new report **replaces** the old one rather than accumulating beside it, so a
+period never has two copies of the same PII at rest.
 | `report:preflight` | Show the window, retention coverage and file ownership. Run after install and after config changes. |
 | `report:status` | Show what has been generated per period. |
 
 Exit codes: **0** ok or nothing due, **1** generation failed (retryable), **2**
 misconfigured.
+
+Exit 0 means the job genuinely ran. A misconfigured audit log or an unwritable
+state file exits **2**, never 0 — otherwise cron would go green forever while
+producing no reports, which is the failure this job exists to prevent. Lock
+contention (two runs overlapping) is exit 0 by design: it is normal and
+self-correcting.
+
+### Timezone
+
+Month boundaries and the `timestamp_local` column follow the app's top-level
+`timezone` setting. A per-service `timezone` key is available on the
+`MonthlyReport` block for the rare deployment that wants reports on a different
+calendar to the rest of the app; leave it unset otherwise.
 
 ### Retention coupling — read this before you deploy
 
@@ -128,8 +149,12 @@ The report is the deliverable, the email is a convenience.
 
 ### Downloading
 
-`GET /admin/reports` lists metadata. `POST /admin/reports/download` streams one
-report, identified by period.
+In the app, open **Reports** as an admin: generated months are listed under
+*Monthly reports* with a per-row download button. Downloading prompts for
+step-up credentials when the admin has MFA enrolled.
+
+Under the hood, `GET /admin/reports` lists metadata and
+`POST /admin/reports/download` streams one report, identified by period.
 
 The download is a POST on purpose: `Security` skips CSRF validation for GET, and
 `SameSite=Lax` cookies still ride a top-level cross-site navigation, so a GET

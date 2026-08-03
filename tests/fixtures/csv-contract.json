@@ -18,7 +18,7 @@
         "sanitize": 33,
         "field": 9,
         "folder_of": 7,
-        "sorted_rows": 1,
+        "sorted_rows": 2,
         "codepoints": 269
     },
     "sanitize": [
@@ -290,6 +290,28 @@
                 },
                 {
                     "key": "a",
+                    "count": 2
+                }
+            ]
+        },
+        {
+            "_comment": "astral vs BMP: pins UTF-16 code-unit order, which raw strcmp/UTF-8 byte order gets wrong",
+            "counts": {
+                "Ａ": 2,
+                "𝐀": 2,
+                "a": 3
+            },
+            "out": [
+                {
+                    "key": "a",
+                    "count": 3
+                },
+                {
+                    "key": "𝐀",
+                    "count": 2
+                },
+                {
+                    "key": "Ａ",
                     "count": 2
                 }
             ]

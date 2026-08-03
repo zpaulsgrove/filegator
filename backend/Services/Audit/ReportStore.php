@@ -141,6 +141,17 @@ class ReportStore implements Service
         }
 
         $this->updateIndex(function (array $index) use ($id, $period, $meta, $csv) {
+            // One report per period. A regeneration (--force, or a recovered
+            // failure) must REPLACE, not accumulate: two entries for one month
+            // means two copies of the same PII at rest, and findByPeriod would
+            // serve whichever happened to sort first.
+            foreach ($index as $existingId => $row) {
+                if (($row['period'] ?? null) === $period && $existingId !== $id) {
+                    @unlink($this->pathFor($existingId));
+                    unset($index[$existingId]);
+                }
+            }
+
             $index[$id] = array_merge([
                 'id' => $id,
                 'period' => $period,
@@ -150,6 +161,22 @@ class ReportStore implements Service
 
             return $index;
         });
+
+        // The ciphertext is worthless if it never reached the index: it would be
+        // invisible to listReports() and untouchable by collectGarbage(), so a
+        // month of PII would sit on disk forever with nothing tracking it. A
+        // root-owned index.json (the ownership mismatch checkOwnership warns
+        // about) is exactly how this happens. Report the failure instead.
+        if (! isset($this->readIndex()[$id])) {
+            @unlink($target);
+            $this->logger->log(
+                'ReportStore: index entry for '.$period.' could not be recorded; discarded the artifact '
+                .'rather than orphaning it outside the index',
+                \Monolog\Logger::WARNING
+            );
+
+            return null;
+        }
 
         return $id;
     }

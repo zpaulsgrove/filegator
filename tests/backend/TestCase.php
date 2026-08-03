@@ -198,6 +198,33 @@ class TestCase extends BaseTestCase
         mkdir(TEST_REPOSITORY);
     }
 
+    /**
+     * Read a path's permission bits as a trailing-octal string.
+     *
+     * The clearstatcache() is load-bearing, not defensive. PHP caches stat
+     * results keyed by the exact path STRING, and these tests create, chmod
+     * and re-read the same handful of paths across consecutive test methods
+     * in one process. When a chmod reaches the file through a different code
+     * path than the assertion's, the cached entry can survive it and
+     * fileperms() then reports the pre-chmod mode.
+     *
+     * That is exactly what produced a CI-only failure in
+     * FilesystemTest::testChmodRecursiveFilesOnlySkipsFolders: on the runner
+     * the file was genuinely 0700 on disk while the cached read returned
+     * 0644, so the assertion failed against a value the filesystem no longer
+     * held. It reproduced on PHP 8.1 and 8.2 but on no local configuration.
+     *
+     * FilesTest already guards its own permission assertion this way; this
+     * helper makes that the default rather than something each test has to
+     * remember.
+     */
+    protected function permissionsOf(string $path, int $digits = 3): string
+    {
+        clearstatcache(true, $path);
+
+        return substr(sprintf('%o', fileperms($path)), -$digits);
+    }
+
     public function invokeMethod(&$object, $methodName, array $parameters = [])
     {
         $reflection = new \ReflectionClass(get_class($object));

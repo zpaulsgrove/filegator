@@ -309,19 +309,24 @@ class ReportStore implements Service
 
     protected function ensureDir(): bool
     {
+        // 0700, not the 0775 used elsewhere in the tree: the documented Ubuntu
+        // install runs `chmod -R 775` (docs/install.md), which would otherwise
+        // leave a directory of decrypted-on-demand PII listable by any local
+        // user. The mode is therefore RE-APPLIED on every call, not only at
+        // creation — an early return here meant that documented protection
+        // lasted exactly until the next time someone ran the install steps.
         if (is_dir($this->dir)) {
+            $this->enforceDirMode();
+
             return true;
         }
 
-        // 0700, not the 0775 used elsewhere in the tree: the documented Ubuntu
-        // install runs `chmod -R 775`, which would otherwise leave a directory
-        // of decrypted-on-demand PII listable by any local user.
         $prev = umask(0077);
 
         try {
             $ok = @mkdir($this->dir, 0700, true) || is_dir($this->dir);
             if ($ok) {
-                @chmod($this->dir, 0700);
+                $this->enforceDirMode();
             } else {
                 $this->logger->log('ReportStore: cannot create '.$this->dir, \Monolog\Logger::WARNING);
             }
@@ -329,6 +334,28 @@ class ReportStore implements Service
             return $ok;
         } finally {
             umask($prev);
+        }
+    }
+
+    /**
+     * Narrow the directory back to 0700 if something widened it. Only acts when
+     * the mode actually differs, so the common path is a single stat.
+     */
+    protected function enforceDirMode(): void
+    {
+        clearstatcache(true, $this->dir);
+        $mode = @fileperms($this->dir);
+
+        if ($mode === false || ($mode & 0777) === 0700) {
+            return;
+        }
+
+        if (@chmod($this->dir, 0700)) {
+            $this->logger->log(sprintf(
+                'ReportStore: tightened %s from %o back to 0700',
+                $this->dir,
+                $mode & 0777
+            ), \Monolog\Logger::WARNING);
         }
     }
 

@@ -215,7 +215,32 @@ const api = {
 
       axios.post('admin/reports/download', body, { responseType: 'blob' })
         .then(res => resolve(res.data))
-        .catch(error => reject(error))
+        // responseType 'blob' applies to ERROR bodies too, so a 422 from the
+        // step-up gate arrives as a Blob and `error.response.data.data` — which
+        // StepUpDialog reads to show "Invalid code" and let the user retry — is
+        // undefined. Without this the dialog reports a generic "Unknown error"
+        // and closes on a simple typo. Decode it back to the normal JSON shape
+        // before rejecting, so the blob stays only for the success path.
+        .catch(error => {
+          const payload = error && error.response && error.response.data
+          if (!(payload instanceof Blob)) return reject(error)
+
+          // FileReader rather than Blob.text(): the latter is absent in older
+          // Safari (and in jsdom), and this runs on the error path where
+          // failing to decode would hide the very message the user needs.
+          const reader = new FileReader()
+          reader.onload = () => {
+            try {
+              error.response.data = JSON.parse(reader.result)
+            } catch (e) {
+              // Not JSON (a proxy error page, say) — leave the original error
+              // untouched rather than inventing a shape.
+            }
+            reject(error)
+          }
+          reader.onerror = () => reject(error)
+          reader.readAsText(payload)
+        })
     })
   },
   deleteUser(params) {

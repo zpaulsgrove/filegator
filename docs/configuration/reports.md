@@ -69,6 +69,13 @@ producing no reports, which is the failure this job exists to prevent. Lock
 contention (two runs overlapping) is exit 0 by design: it is normal and
 self-correcting.
 
+A **corrupt** `report_state.json` is also a hard stop rather than a fresh
+start. Treating an unreadable period map as "no state yet" would make every
+period look never-generated, so the next run would rebuild them under new ids
+and orphan any download link an admin holds. Inspect the file, then repair or
+remove it — and note that removing it has exactly that regenerating effect, so
+prefer repairing.
+
 ### Timezone
 
 Month boundaries and the `timestamp_local` column follow the app's top-level

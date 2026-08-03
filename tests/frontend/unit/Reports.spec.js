@@ -668,3 +668,31 @@ describe('Reports.vue monthly reports', () => {
     expect(wrapper.vm.monthlyReports).toEqual([])
   })
 })
+
+// ── Translation keys ─────────────────────────────────────────────────────────
+
+describe('Reports.vue translation keys', () => {
+  // lang() returns an unknown term VERBATIM — it does not interpolate. So a
+  // missing key that carries placeholders renders a literal "{0}" to the user,
+  // which is the one failure mode in this class that is actually visible.
+  it('registers every interpolating key this view uses', () => {
+    const english = require('@/translations/english').default
+
+    expect(english['download the {0} activity report']).toBeDefined()
+    expect(english['download the {0} activity report']).toContain('{0}')
+  })
+
+  it('registers the plain monthly-report strings too', () => {
+    const english = require('@/translations/english').default
+
+    ;[
+      'Monthly reports',
+      'No monthly reports yet',
+      'Period',
+      'Coverage',
+      'Generated',
+      'This report contains usernames and full file paths.',
+      'Generated on the server and stored encrypted. Downloading one is recorded in the log.',
+    ].forEach(key => expect(english[key]).toBeDefined())
+  })
+})

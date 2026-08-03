@@ -206,6 +206,27 @@ class ReportStoreTest extends TestCase
         $this->assertStringNotContainsString('alice', json_encode($rows));
     }
 
+    /**
+     * The documented 0700 defence exists because the project's own install
+     * steps run `chmod -R 775`. Applying it only at creation meant the
+     * protection lasted until the next time someone followed those steps.
+     */
+    public function testDirectoryModeIsRepairedNotOnlySetAtCreation()
+    {
+        $store = $this->makeStore();
+        $store->write('2026-07', self::CSV);
+
+        chmod($this->dir, 0775);
+        clearstatcache(true, $this->dir);
+        $this->assertSame('775', substr(sprintf('%o', fileperms($this->dir)), -3));
+
+        // Any subsequent write must narrow it back.
+        $store->write('2026-08', self::CSV);
+
+        clearstatcache(true, $this->dir);
+        $this->assertSame('700', substr(sprintf('%o', fileperms($this->dir)), -3));
+    }
+
     public function testIdsAreUnguessableRatherThanThePeriod()
     {
         $store = $this->makeStore();

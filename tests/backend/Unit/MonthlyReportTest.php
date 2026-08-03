@@ -356,6 +356,57 @@ class MonthlyReportTest extends TestCase
         $this->assertSame($firstId, $report->readStateFile()['periods']['2026-07']['report_id']);
     }
 
+    /**
+     * A transient send failure must actually be retried on later ticks.
+     *
+     * Once a period is `ok`, needsGeneration() returns false and generate() —
+     * hence notify() — is never entered again, so without a dedicated retry
+     * pass the notice was never delivered at all, despite notify_max_attempts
+     * promising three tries in both the config and the docs.
+     */
+    public function testNotificationIsRetriedOnALaterTickAfterATransientFailure()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        $store = $this->makeStore();
+
+        InMemoryMailer::$failNextSend = true;
+        $first = $this->makeReport([], $audit, $store);
+        $first->run();
+
+        $this->assertSame([], InMemoryMailer::$messages, 'the first send is expected to fail');
+        $reportId = $first->readStateFile()['periods']['2026-07']['report_id'];
+
+        // Next daily tick: nothing is due, but the notice is still owed.
+        $second = $this->makeReport([], $audit, $store);
+        $second->run();
+
+        $this->assertCount(1, InMemoryMailer::$messages);
+        $state = $second->readStateFile()['periods']['2026-07'];
+        $this->assertContains('ready', $state['notified']);
+        // ...and the artifact was NOT rebuilt, so any link an admin holds still works.
+        $this->assertSame($reportId, $state['report_id']);
+    }
+
+    public function testNotificationRetryStopsAtTheCap()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        $store = $this->makeStore();
+
+        $this->makeReport(['notify_max_attempts' => 2], $audit, $store);
+
+        for ($i = 0; $i < 5; $i++) {
+            InMemoryMailer::$failNextSend = true;
+            $this->makeReport(['notify_max_attempts' => 2], $audit, $store)->run();
+        }
+
+        $state = $this->makeReport(['notify_max_attempts' => 2], $audit, $store)->readStateFile();
+
+        $this->assertSame(2, $state['periods']['2026-07']['notify_attempts']['ready']);
+        $this->assertSame([], InMemoryMailer::$messages);
+    }
+
     public function testRefusesToBuildAboveMaxEvents()
     {
         $audit = $this->makeAudit();
@@ -581,6 +632,47 @@ class MonthlyReportTest extends TestCase
             $this->logger->messagesAtLeast(\Monolog\Logger::WARNING),
             function ($m) { return strpos($m, 'refusing to write an empty report') !== false; }
         ));
+    }
+
+    /**
+     * A corrupt state file must stop the job, not reset it.
+     *
+     * Degrading to an empty period map would make every backfill period look
+     * never-generated: the next run would rebuild them all under new ids and
+     * orphan every link an admin holds — the outcome this design is most
+     * careful to avoid. Refusing keeps the damage at "no report this tick".
+     */
+    public function testCorruptStateFileRefusesRatherThanRegeneratingEverything()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        $store = $this->makeStore();
+
+        $this->makeReport([], $audit, $store)->run();
+        $originalId = $this->makeReport([], $audit, $store)->readStateFile()['periods']['2026-07']['report_id'];
+
+        file_put_contents(TEST_TMP_PATH.'report_state.json', '{"periods": {truncated');
+
+        $result = $this->makeReport([], $audit, $store)->run();
+
+        $this->assertNull($result, 'a corrupt state file is a hard stop, i.e. exit 2');
+        // The existing report is untouched — not superseded by a fresh id.
+        $this->assertSame($originalId, $store->findByPeriod('2026-07')['id']);
+        $this->assertNotEmpty(array_filter(
+            $this->logger->messagesAtLeast(\Monolog\Logger::WARNING),
+            function ($m) { return strpos($m, 'state file is corrupt') !== false; }
+        ));
+    }
+
+    public function testEmptyStateFileIsNotTreatedAsCorrupt()
+    {
+        $audit = $this->makeAudit();
+        $this->seedJuly($audit);
+        touch(TEST_TMP_PATH.'report_state.json');
+
+        $results = $this->makeReport([], $audit)->run();
+
+        $this->assertSame(MonthlyReport::STATUS_OK, $results[0]['status']);
     }
 
     public function testDisabledIsASafeNoOp()

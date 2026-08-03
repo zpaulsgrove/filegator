@@ -144,6 +144,14 @@ const data = {
   'If the audit log service is not configured, no activity is recorded.': 'If the audit log service is not configured, no activity is recorded.',
   'This exports {0} events, including usernames and full file paths, to an unencrypted file.': 'This exports {0} events, including usernames and full file paths, to an unencrypted file.',
   'This export is large and may take a moment.': 'This export is large and may take a moment.',
+  'Monthly reports': 'Monthly reports',
+  'Generated on the server and stored encrypted. Downloading one is recorded in the log.': 'Generated on the server and stored encrypted. Downloading one is recorded in the log.',
+  'No monthly reports yet': 'No monthly reports yet',
+  'Period': 'Period',
+  'Coverage': 'Coverage',
+  'Generated': 'Generated',
+  'download the {0} activity report': 'download the {0} activity report',
+  'This report contains usernames and full file paths.': 'This report contains usernames and full file paths.',
 }
 
 export default data

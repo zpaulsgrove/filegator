@@ -229,7 +229,13 @@ class MonthlyReport implements Service
         }
 
         try {
-            $state = $this->readState($fh);
+            try {
+                $state = $this->readState($fh);
+            } catch (CorruptStateException $e) {
+                $this->logger->log('MonthlyReport: '.$e->getMessage(), \Monolog\Logger::WARNING);
+
+                return null;
+            }
 
             if ($only !== null) {
                 // An explicit --period must still obey the same two guards the
@@ -273,6 +279,15 @@ class MonthlyReport implements Service
                 $results[] = $this->generate($period, $state, $force);
                 $this->writeState($fh, $state);
             }
+
+            // Retry notices that are still owed. Without this pass the capped
+            // retry is unreachable: once a period is `ok`, needsGeneration()
+            // returns false, so generate() — and therefore notify() — is never
+            // entered again, and a single transient send failure meant the
+            // notice was never delivered at all despite notify_max_attempts
+            // promising three tries.
+            $this->retryPendingNotifications($state, $periods);
+            $this->writeState($fh, $state);
 
             $removed = $this->store->collectGarbage($this->now());
             if ($removed > 0) {
@@ -482,6 +497,51 @@ class MonthlyReport implements Service
     }
 
     /**
+     * Re-attempt notices that were never delivered, for periods that are
+     * already in their terminal state.
+     *
+     * Only the notification is retried — never generation. The artifact is the
+     * deliverable and must keep its id, so a period that already has a report
+     * is never rebuilt here; that would mint a new id and orphan any link an
+     * admin holds.
+     *
+     * Periods handled earlier in THIS run are skipped. Re-sending a second
+     * later, to the mail server that just refused, would burn the whole
+     * three-attempt budget inside one cron tick and leave nothing for the days
+     * that follow — which is the opposite of what a capped retry is for.
+     *
+     * @param string[] $handledThisRun periods already attempted by generate()
+     */
+    protected function retryPendingNotifications(array &$state, array $handledThisRun = []): void
+    {
+        foreach ($state['periods'] as $period => $entry) {
+            if (in_array($period, $handledThisRun, true)) {
+                continue;
+            }
+
+            $status = $entry['status'] ?? null;
+
+            $subject = null;
+            if ($status === self::STATUS_OK) {
+                $subject = 'ready';
+            } elseif ($status === self::STATUS_BLOCKED_COVERAGE) {
+                $subject = 'blocked';
+            } else {
+                continue;
+            }
+
+            if (in_array($subject, $entry['notified'] ?? [], true)) {
+                continue;
+            }
+            if (($entry['notify_attempts'][$subject] ?? 0) >= $this->notifyMaxAttempts) {
+                continue;
+            }
+
+            $this->notify($period, $entry, $state, $subject === 'ready');
+        }
+    }
+
+    /**
      * Send the "report ready" notice. Capped, and NEVER able to affect the
      * artifact's status — the CSV is the deliverable, mail is best-effort.
      */
@@ -600,30 +660,79 @@ class MonthlyReport implements Service
         return is_array($decoded) ? $decoded : [];
     }
 
+    /**
+     * @throws CorruptStateException when the file exists but cannot be parsed
+     */
     protected function readState($fh): array
     {
         rewind($fh);
         $raw = stream_get_contents($fh);
-        $decoded = $raw === '' ? [] : json_decode($raw, true);
-        $state = is_array($decoded) ? $decoded : [];
 
-        if (! isset($state['periods']) || ! is_array($state['periods'])) {
-            $state['periods'] = [];
+        if ($raw === '' || $raw === false) {
+            return ['periods' => []];
         }
 
-        return $state;
+        $decoded = json_decode($raw, true);
+
+        // A non-empty file that will not parse is CORRUPTION, not "no state".
+        // Degrading to [] here would make the next run treat every backfill
+        // period as never-generated: it would rebuild them all with new ids and
+        // orphan every link an admin holds — the one outcome this design is
+        // most careful to avoid. Refuse instead, and keep the bytes so an
+        // operator can see what happened.
+        if (! is_array($decoded)) {
+            throw new CorruptStateException($this->stateFile);
+        }
+
+        if (! isset($decoded['periods']) || ! is_array($decoded['periods'])) {
+            $decoded['periods'] = [];
+        }
+
+        return $decoded;
     }
 
+    /**
+     * Overwrite the state file in place.
+     *
+     * Deliberately NOT tmp+rename, unlike ReportStore: this handle is the one
+     * holding the flock, and renaming a new inode over it would silently break
+     * mutual exclusion for any concurrent run still holding the old one.
+     * Instead the payload is serialised BEFORE truncating, and the write is
+     * checked — a short write is reported loudly rather than leaving a
+     * half-written period map to be discovered on the next tick.
+     */
     protected function writeState($fh, array $state): void
     {
         $state['version'] = 1;
         $state['last_run_at'] = $this->now();
 
+        $payload = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        if ($payload === false) {
+            // Never truncate when there is nothing valid to put back.
+            $this->logger->log(
+                'MonthlyReport: could not encode state; leaving the previous state file intact',
+                \Monolog\Logger::WARNING
+            );
+
+            return;
+        }
+
         ftruncate($fh, 0);
         rewind($fh);
-        fwrite($fh, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $written = fwrite($fh, $payload);
         fflush($fh);
         @chmod($this->stateFile, 0600);
+
+        if ($written === false || $written !== strlen($payload)) {
+            $this->logger->log(sprintf(
+                'MonthlyReport: state file write was short (%s of %d bytes) — %s may be corrupt, '
+                .'and the next run will refuse to start until it is repaired or removed',
+                var_export($written, true),
+                strlen($payload),
+                $this->stateFile
+            ), \Monolog\Logger::WARNING);
+        }
     }
 
     /**

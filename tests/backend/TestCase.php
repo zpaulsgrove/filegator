@@ -64,6 +64,14 @@ class TestCase extends BaseTestCase
         if (file_exists($audit_state_file)) {
             @unlink($audit_state_file);
         }
+        // Monthly-report state is keyed by calendar period, so a period left
+        // marked "ok" by one test would make the next one a no-op — the suite
+        // would go green for the wrong reason.
+        $report_state_file = TEST_TMP_PATH.'report_state.json';
+        if (file_exists($report_state_file)) {
+            @unlink($report_state_file);
+        }
+        $this->delTree(TEST_TMP_PATH.'reports');
         // Clear stale lockfiles so per-IP/per-email throttles don't leak across tests.
         foreach (glob(TEST_TMP_PATH.'*.lock') ?: [] as $f) @unlink($f);
         $this->config_overrides = [];

@@ -358,6 +358,71 @@ class MonthlyReportTest extends TestCase
         }), 'the warning must name both the current value and the required one');
     }
 
+    /**
+     * A coverage block is a CONFIG problem, not a transient failure, so raising
+     * max_age_days must make the next run produce the report. Pruning is lazy,
+     * so events hidden by the read cutoff are usually still on disk.
+     *
+     * An earlier revision treated blocked_coverage as terminal, which meant an
+     * operator who fixed the config silently never got the backfilled months.
+     */
+    public function testRaisingRetentionUnblocksAPreviouslyBlockedPeriod()
+    {
+        $short = $this->makeAudit(30);
+        $this->seedJuly($short);
+        $blocked = $this->makeReport([], $short);
+
+        $this->assertSame(MonthlyReport::STATUS_BLOCKED_COVERAGE, $blocked->run()[0]['status']);
+
+        // Operator raises max_age_days; the next daily tick must pick it up.
+        $fixed = $this->makeReport([], $this->makeAudit(40));
+        $results = $fixed->run();
+
+        $this->assertSame(MonthlyReport::STATUS_OK, $results[0]['status']);
+        $this->assertSame('complete', $fixed->readStateFile()['periods']['2026-07']['coverage']);
+    }
+
+    /**
+     * A coverage block must not consume an attempt, or a period could be
+     * abandoned before it ever became generatable.
+     */
+    public function testCoverageBlockDoesNotBurnAttempts()
+    {
+        $audit = $this->makeAudit(30);
+        $this->seedJuly($audit);
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->makeReport(['max_attempts' => 2], $audit)->run();
+        }
+
+        $state = $this->makeReport(['max_attempts' => 2], $audit)->readStateFile();
+
+        $this->assertSame(0, $state['periods']['2026-07']['attempts'] ?? 0);
+        $this->assertSame(MonthlyReport::STATUS_BLOCKED_COVERAGE, $state['periods']['2026-07']['status']);
+    }
+
+    /**
+     * A month whose LAST second already predates the cutoff is gone — no config
+     * change brings it back. It must be recorded once and never retried, and it
+     * must NOT fail the cron: backfill looks back further than any sane
+     * retention window, so on a fresh install these land on the first run and
+     * would otherwise alert every single day forever.
+     */
+    public function testMonthEntirelyOutsideRetentionIsTerminalNotBlocked()
+    {
+        $audit = $this->makeAudit(40);
+        $report = $this->makeReport(['backfill_months' => 3], $audit);
+
+        $results = $report->run();
+        $byPeriod = array_column($results, 'status', 'period');
+
+        $this->assertSame(MonthlyReport::STATUS_UNRECOVERABLE, $byPeriod['2026-05']);
+        $this->assertSame(MonthlyReport::STATUS_OK, $byPeriod['2026-07']);
+
+        // Second tick must not mention it again.
+        $this->assertNotContains('2026-05', array_column($report->run(), 'period'));
+    }
+
     public function testMarksPartialWhenCoverageNotRequired()
     {
         $audit = $this->makeAudit(30);

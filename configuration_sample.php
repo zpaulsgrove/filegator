@@ -247,7 +247,80 @@ return [
             'config' => [
                 'log_file' => __DIR__.'/private/audit_log.jsonl',
                 'key_path' => __DIR__.'/private/audit_encryption.key', // 0600, auto-generated
-                'max_age_days' => 30, // entries older than this are purged on write
+                // 40, not 30: the monthly report (below) needs the whole
+                // previous calendar month to still be inside query()'s
+                // retention cutoff — 31 days plus slack for a run that is a
+                // day or two late. Anything below 32 silently truncates every
+                // monthly report. Raising it also means the raw log holds PII
+                // (including IPs) for longer, which is a privacy decision, not
+                // just a tuning knob.
+                'max_age_days' => 40, // entries older than this are purged on write
+            ],
+        ],
+        // Encrypted store for generated activity reports, written by
+        //   php bin/filegator report:monthly
+        // and read by admins through POST /admin/reports/download. Uses a
+        // DEDICATED key: a leaked reports key decrypts neither the audit log
+        // nor MFA secrets. BACK IT UP alongside the others — without it the
+        // stored reports are unrecoverable.
+        'Filegator\Services\Audit\ReportStore' => [
+            'handler' => '\Filegator\Services\Audit\ReportStore',
+            'config' => [
+                'dir' => __DIR__.'/private/reports', // created 0700 on first run
+                'key_path' => __DIR__.'/private/reports_encryption.key', // 0600, auto-generated
+                // How long a GENERATED REPORT lives. Deliberately close to
+                // AuditLog's max_age_days below: that bounds the raw log, this
+                // bounds the derived artifact — but the report still contains
+                // usernames and full paths, so a large value here quietly
+                // rebuilds the PII store that retention exists to destroy, in
+                // blobs searchable only by decrypting all of them. Set this
+                // from your data-retention policy, not from convenience.
+                'max_age_days' => 100, // ~3 months
+                'max_count' => 24,     // hard cap regardless of age
+            ],
+        ],
+        // Monthly file-activity report. Run from SYSTEM CRON, DAILY:
+        //
+        //   0 3 * * *  cd /path/to/filegator && php bin/filegator report:monthly
+        //
+        // Daily rather than monthly on purpose: the job is idempotent per
+        // calendar month, so a daily tick RETRIES a month that failed instead
+        // of losing it, and does nothing on the other ~30 days. Run it as the
+        // same user as PHP-FPM — `php bin/filegator report:preflight` checks
+        // that, and everything else below, before you need the first report.
+        //
+        // Docker note: the shipped image has no cron daemon and private/ is a
+        // volume, so run this from host cron or a sidecar against that volume.
+        //
+        // REQUIRES AuditLog max_age_days >= 32 (40 recommended). query()
+        // applies its own retention cutoff before any date filter, so a 30-day
+        // log CANNOT answer for a 31-day month and every report would be
+        // silently short. With require_full_coverage the job refuses instead.
+        //
+        // The CSV is never emailed. It is a decrypted month of usernames and
+        // full paths; admins download it through the authenticated, logged
+        // route and the notification carries no event data.
+        'Filegator\Services\Audit\MonthlyReport' => [
+            'handler' => '\Filegator\Services\Audit\MonthlyReport',
+            'config' => [
+                'enabled' => true,
+                'state_file' => __DIR__.'/private/report_state.json',
+                // Look back this far for a month that was never generated. Bounded
+                // by retention: with max_age_days 40 only the previous month is
+                // fully inside the window, so raising this without raising
+                // max_age_days (~31 days per extra month) just produces a period
+                // that is permanently short and warns every day.
+                'backfill_months' => 1,
+                'require_full_coverage' => true, // refuse to emit a month retention cannot cover
+                'max_events' => 250000,          // refuse rather than risk an OOM; see docs
+                'max_attempts' => 10,            // per period, then abandoned
+                'notify_max_attempts' => 3,      // email retries; the CSV is NOT regenerated
+                // Absolute base URL for the "sign in to download" line. Must be
+                // https:// (a non-TLS link would walk an admin onto cleartext,
+                // where the session cookie is not Secure). NEVER derived from
+                // the request Host header — see PasswordResetService's
+                // reset_url_base for why. Null just omits the link.
+                'report_url_base' => null, // e.g. 'https://files.example.com/'
             ],
         ],
         'Filegator\Services\Router\Router' => [

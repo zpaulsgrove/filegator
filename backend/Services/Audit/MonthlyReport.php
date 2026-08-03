@@ -51,7 +51,16 @@ use Filegator\Services\Service;
  */
 class MonthlyReport implements Service
 {
-    const DEFAULT_BACKFILL_MONTHS = 3;
+    /**
+     * How many complete months back to consider.
+     *
+     * Default 1 because the useful backfill horizon is BOUNDED BY RETENTION:
+     * with the recommended max_age_days of 40, only the previous calendar month
+     * is ever fully inside the window, so a larger value guarantees a
+     * permanently blocked period that re-warns on every daily tick. Raise this
+     * only together with max_age_days — roughly 31 days per extra month.
+     */
+    const DEFAULT_BACKFILL_MONTHS = 1;
 
     const DEFAULT_MAX_ATTEMPTS = 10;
 
@@ -66,6 +75,8 @@ class MonthlyReport implements Service
     const STATUS_ABANDONED = 'abandoned';
 
     const STATUS_BLOCKED_COVERAGE = 'blocked_coverage';
+
+    const STATUS_UNRECOVERABLE = 'unrecoverable';
 
     const STATUS_TOO_LARGE = 'too_large';
 
@@ -244,13 +255,25 @@ class MonthlyReport implements Service
         }
         $status = $entry['status'] ?? null;
 
-        if (in_array($status, [self::STATUS_OK, self::STATUS_ABANDONED, self::STATUS_TOO_LARGE], true)) {
+        if (in_array($status, [
+            self::STATUS_OK,
+            self::STATUS_ABANDONED,
+            self::STATUS_TOO_LARGE,
+            self::STATUS_UNRECOVERABLE,
+        ], true)) {
             return false;
         }
-        // A period blocked purely on retention can never become coverable
-        // later — the raw events are gone — so it is not retried either.
+
+        // A coverage block IS retried, and deliberately does not consume an
+        // attempt. It is a configuration problem, not a transient failure: the
+        // operator raises max_age_days and the next daily tick must then
+        // produce the report. Pruning is lazy (once a day, on write), so events
+        // hidden by the read-time cutoff are usually still on disk and become
+        // visible again as soon as the window widens. Treating this as terminal
+        // would mean a fixed config silently never backfills — and the repeated
+        // warning until it IS fixed is the point, not noise.
         if ($status === self::STATUS_BLOCKED_COVERAGE) {
-            return false;
+            return true;
         }
 
         return ($entry['attempts'] ?? 0) < $this->maxAttempts;
@@ -260,12 +283,36 @@ class MonthlyReport implements Service
     {
         [$from, $to] = $this->windowFor($period);
         $entry = $state['periods'][$period] ?? ['attempts' => 0];
-        $entry['attempts'] = ($entry['attempts'] ?? 0) + 1;
         $entry['last_attempt_at'] = $this->now();
 
         $cutoff = $this->audit->retentionCutoff();
         $complete = $cutoff <= $from;
 
+        // A month whose LAST second already predates the cutoff is simply gone —
+        // no config change brings it back, so it is terminal rather than
+        // blocked. Recording it once (instead of re-warning daily) is what
+        // keeps a normal install quiet: backfill_months looks back further than
+        // any sane retention window, so on every deployment the older backfill
+        // candidates land here on the first run and are never mentioned again.
+        if ($to < $cutoff) {
+            $entry['status'] = self::STATUS_UNRECOVERABLE;
+            $entry['coverage'] = 'none';
+            $state['periods'][$period] = $entry;
+
+            $this->logger->log(sprintf(
+                'MonthlyReport: %s predates the audit log retention window (max_age_days %d) '
+                .'and can no longer be reported; recorded once and not retried.',
+                $period,
+                $this->audit->getMaxAgeDays()
+            ), \Monolog\Logger::WARNING);
+
+            return ['period' => $period, 'status' => self::STATUS_UNRECOVERABLE];
+        }
+
+        // The coverage check runs BEFORE the attempt counter is incremented: a
+        // config problem must not burn through max_attempts while the operator
+        // is still fixing it, or the period would be abandoned before it ever
+        // became generatable.
         if (! $complete && $this->requireFullCoverage) {
             $missing = $cutoff - $from;
             $entry['status'] = self::STATUS_BLOCKED_COVERAGE;
@@ -286,6 +333,7 @@ class MonthlyReport implements Service
             return ['period' => $period, 'status' => self::STATUS_BLOCKED_COVERAGE];
         }
 
+        $entry['attempts'] = ($entry['attempts'] ?? 0) + 1;
         $events = $this->audit->query(['from' => $from, 'to' => $to]);
 
         if (count($events) > $this->maxEvents) {

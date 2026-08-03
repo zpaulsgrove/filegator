@@ -1,0 +1,104 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * This file is part of the FileGator package.
+ *
+ * (c) Milos Stojanovic <alcalbg@gmail.com>
+ *
+ * For the full copyright and license information, please view the LICENSE file
+ */
+
+/*
+ * Command-line entry point for scheduled jobs.
+ *
+ * Intended crontab line — DAILY, not monthly:
+ *
+ *   0 3 * * *  cd /path/to/filegator && php bin/filegator report:monthly
+ *
+ * The job is idempotent per calendar month, so a daily tick does nothing on
+ * ~30 days out of 31 and RETRIES a month that failed. `0 3 1 * *` gives exactly
+ * one attempt per month; a host, mail server or config error at that moment
+ * loses the month permanently.
+ *
+ * Run it as the SAME USER as PHP-FPM. Files this creates (reports, the report
+ * encryption key) must be readable by the web process, and files the web
+ * process creates must be readable by this one. `report:preflight` checks it.
+ */
+
+// Guard first, before any work. bin/ sits outside the docroot (which is dist/),
+// but a misconfigured vhost is the classic way a CLI script becomes a public
+// unauthenticated endpoint — and this one boots the app and can send mail.
+// Docroot placement is a deployment convention; this is a control.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit(1);
+}
+
+// Match dist/index.php: any read of E_STRICT emits a deprecation notice on
+// modern PHP.
+error_reporting(E_ALL & ~E_DEPRECATED);
+
+if (version_compare(PHP_VERSION, '7.2.5', '<')) {
+    fwrite(STDERR, 'Minimum requirement is PHP 7.2.5. You are using: '.PHP_VERSION."\n");
+    exit(2);
+}
+
+$root = dirname(__DIR__);
+
+require $root.'/vendor/autoload.php';
+
+// configuration_sample.php reads all four of these at require time, so they
+// must exist before it is loaded or the require fatals.
+if (! defined('APP_ENV')) {
+    define('APP_ENV', getenv('APP_ENV') ?: 'production');
+}
+if (! defined('APP_PUBLIC_PATH')) {
+    define('APP_PUBLIC_PATH', '');
+}
+define('APP_PUBLIC_DIR', $root.'/dist');
+define('APP_VERSION', '7.14.0');
+
+// Deliberately does NOT copy configuration_sample.php the way dist/index.php
+// does. A cron silently materialising the app's configuration — and
+// transitively auto-generating encryption keys — is a footgun; the web entry
+// point owns first-run setup.
+if (! file_exists($root.'/configuration.php')) {
+    fwrite(STDERR, "configuration.php not found. Start the web app once, or copy configuration_sample.php.\n");
+    exit(2);
+}
+
+use Filegator\Cli\CliKernel;
+
+// Surface warnings and fatals as real failures. Without this a boot-time
+// warning is invisible and a fatal exits non-zero with no explanation.
+set_error_handler(function ($severity, $message, $file, $line) {
+    if (! (error_reporting() & $severity)) {
+        return false;
+    }
+    throw new \ErrorException($message, 0, $severity, $file, $line);
+});
+
+try {
+    $rawConfig = require $root.'/configuration.php';
+
+    if (! is_array($rawConfig)) {
+        fwrite(STDERR, "configuration.php did not return an array.\n");
+        exit(2);
+    }
+
+    $container = CliKernel::boot($rawConfig);
+
+    exit(CliKernel::dispatch($container, $argv));
+} catch (\Throwable $e) {
+    // App's own boot handler ends in a bare `die;`, which exits ZERO — under
+    // cron that makes every boot failure look like a successful run. Reporting
+    // it properly is the entire reason this file does not use App.
+    fwrite(STDERR, sprintf(
+        "filegator: %s\n  in %s:%d\n",
+        $e->getMessage(),
+        $e->getFile(),
+        $e->getLine()
+    ));
+    exit(1);
+}

@@ -15,6 +15,17 @@ private/tmp/*
 private/sessions/*
 private/users.json
 private/password_resets.json
+# Encryption keys and everything they protect. An ops workstation that has run
+# the app (or the report cron) once would otherwise ship the audit log, the
+# generated reports AND their decryption keys into the image layers, and on to
+# whatever registry the image is pushed to — where deleting them later does not
+# remove them from earlier layers.
+private/*.key
+private/audit_log.jsonl*
+private/audit_state.json
+private/report_state.json
+private/reports
+private/INITIAL_ADMIN_PASSWORD.txt
 repository
 snapshot
 filegator-snapshot.tgz

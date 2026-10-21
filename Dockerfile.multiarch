@@ -3,7 +3,9 @@
 # build and deploy to docker hub with:
 # docker buildx build --push --platform linux/arm/v7,linux/arm64/v8,linux/amd64,linux/386 --tag filegator/filegator:vX.X.X-multiarch - < Dockerfile.multiarch
 ################################################
-FROM php:8.3-apache-bullseye
+# Pinned to a patched release (CVE-2026-109618/109619). Must be bookworm or
+# newer: the official -bullseye tags stopped receiving PHP updates in Aug 2025.
+FROM php:8.3.36-apache-bookworm@sha256:cbd3b3d9011668443d54ab40ec31db56c73d91b4c8198935d639aa80d2d815c1
 
 RUN apt-get update > /dev/null
 RUN apt-get install -y git libzip-dev wget unzip

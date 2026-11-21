@@ -1,11 +1,10 @@
 # staging/
 
-Operator-side artifacts for standing up a short-lived public-facing staging environment for UAT of the unreleased MFA + password-reset changes. Not part of the application source; not loaded by the running app. Safe to keep in the repo, safe to delete after UAT.
+UAT checklists for business-user testing sessions. Not part of the application source; not loaded by the running app.
 
 | File | Purpose |
 |---|---|
-| [RUNBOOK.md](RUNBOOK.md) | Step-by-step commands to run on the VM (start here) |
-| [configuration.staging.patch.md](configuration.staging.patch.md) | Exact deltas to apply to prod's `configuration.php` on the VM |
-| [docker-compose.staging.yml](docker-compose.staging.yml) | Adds a Caddy reverse-proxy in front of the filegator container |
-| [Caddyfile](Caddyfile) | TLS termination via Let's Encrypt + sslip.io |
 | [UAT-checklist.md](UAT-checklist.md) | Printable checklist for business-user testing sessions |
+| [UAT-checklist-mfa-password-reset.md](UAT-checklist-mfa-password-reset.md) | Checklist for the MFA and password-reset changes |
+
+The staging environment itself (Dockerfile, compose file, Caddy reverse proxy and runbook) lives in the `filegator-infra` repository under `staging/`. The deploy kit that used to sit here was removed because it built on `php:8.3-apache-bullseye`, which stopped receiving PHP security updates in Aug 2025, and ran an unpinned Caddy. Use the `filegator-infra` setup instead.

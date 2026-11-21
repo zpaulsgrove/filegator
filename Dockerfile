@@ -5,11 +5,12 @@
 # can never silently change. The prior curl-and-pipe installs had no
 # integrity check at all.
 FROM node:22-bullseye@sha256:62f550497561d6285e10abd952730db89c905be990237eaf8744137929c72844 AS node-source
-FROM composer:2@sha256:b09bccd91a78fe8a9ab4b33d707b862e8fe54fec17782e32683ad2a69c46867d AS composer-source
+FROM composer:2.11.2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 AS composer-source
 
-# Pinned to a patched release (CVE-2026-109618/109619). Must be bookworm or
+# Pinned to a patched release: 8.3.37 (PHP security release of 2026-11-19),
+# which also carries the CVE-2026-109618/109619 fixes. Must be bookworm or
 # newer: the official -bullseye tags stopped receiving PHP updates in Aug 2025.
-FROM php:8.3.36-apache-bookworm@sha256:cbd3b3d9011668443d54ab40ec31db56c73d91b4c8198935d639aa80d2d815c1 AS builder
+FROM php:8.3.37-apache-bookworm@sha256:d60f7be79a869deb1562b6ecb2f555bccb65c8dd4af930b50ae4d14d4bd4696c AS builder
 
 COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-source /usr/local/lib/node_modules /usr/local/lib/node_modules
@@ -41,7 +42,7 @@ RUN rm README.md couscous.yml repository/.gitignore babel.config.js cypress* .en
 #################################
 # stage production
 #################################
-FROM php:8.3.36-apache-bookworm@sha256:cbd3b3d9011668443d54ab40ec31db56c73d91b4c8198935d639aa80d2d815c1
+FROM php:8.3.37-apache-bookworm@sha256:d60f7be79a869deb1562b6ecb2f555bccb65c8dd4af930b50ae4d14d4bd4696c
 
 RUN apt-get update > /dev/null
 RUN apt-get install -y git libzip-dev libldap2-dev

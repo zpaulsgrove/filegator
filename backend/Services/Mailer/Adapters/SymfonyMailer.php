@@ -15,6 +15,7 @@ use Filegator\Services\Mailer\MailerInterface;
 use Filegator\Services\Service;
 use Symfony\Component\Mailer\Mailer;
 use Symfony\Component\Mailer\Transport;
+use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 
@@ -69,7 +70,7 @@ class SymfonyMailer implements Service, MailerInterface
         $this->clampSocketTimeout();
 
         try {
-            $transport = Transport::fromDsn($dsn);
+            $transport = $this->createTransport($dsn);
             $mailer = new Mailer($transport);
 
             $email = (new Email())
@@ -93,6 +94,15 @@ class SymfonyMailer implements Service, MailerInterface
         } finally {
             $this->restoreSocketTimeout();
         }
+    }
+
+    /**
+     * Build the transport for a DSN. Separate so tests can supply a mock HTTP
+     * client (API transports such as Postmark) or a capturing transport.
+     */
+    protected function createTransport(string $dsn): TransportInterface
+    {
+        return Transport::fromDsn($dsn);
     }
 
     protected function timeoutSeconds(): int

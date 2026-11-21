@@ -1,6 +1,6 @@
 # Pin Composer source image by digest so the binary we COPY in is byte-fixed.
 # The prior curl https://getcomposer.org/installer | php had no integrity check.
-FROM composer:2@sha256:b09bccd91a78fe8a9ab4b33d707b862e8fe54fec17782e32683ad2a69c46867d AS composer-source
+FROM composer:2.11.2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 AS composer-source
 
 # Pinned to a patched release: 8.3.37 (PHP security release of 2026-11-19),
 # which also carries the CVE-2026-109618/109619 fixes. Must be bookworm or

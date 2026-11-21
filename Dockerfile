@@ -5,7 +5,7 @@
 # can never silently change. The prior curl-and-pipe installs had no
 # integrity check at all.
 FROM node:22-bullseye@sha256:62f550497561d6285e10abd952730db89c905be990237eaf8744137929c72844 AS node-source
-FROM composer:2@sha256:b09bccd91a78fe8a9ab4b33d707b862e8fe54fec17782e32683ad2a69c46867d AS composer-source
+FROM composer:2.11.2@sha256:50ea4d33fdcde1adb0f045547295faa1548b33872e5f789dae5b02ce2fb5de93 AS composer-source
 
 # Pinned to a patched release: 8.3.37 (PHP security release of 2026-11-19),
 # which also carries the CVE-2026-109618/109619 fixes. Must be bookworm or

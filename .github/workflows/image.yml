@@ -1,0 +1,59 @@
+name: Image
+
+# Builds the image staging and production actually deploy
+# (zpaulsgrove/filegator-infra: staging/Dockerfile.staging) from THIS
+# commit's code, then runs the infra repo's smoke test against it. The
+# repo's own Dockerfile clones upstream filegator, so it does not test this
+# code.
+#
+# Requires the FILEGATOR_INFRA_DEPLOY_KEY secret: the private half of a
+# read-only deploy key on zpaulsgrove/filegator-infra.
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deployed-image:
+    name: Deployed image build and smoke test
+    runs-on: ubuntu-latest
+    # PRs from forks get no secrets, so they cannot read the private infra repo.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Check deploy key is configured
+        env:
+          KEY: ${{ secrets.FILEGATOR_INFRA_DEPLOY_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Secret FILEGATOR_INFRA_DEPLOY_KEY is not set. Add a read-only deploy key to zpaulsgrove/filegator-infra and store its private key as this secret."
+            exit 1
+          fi
+
+      - name: Checkout app
+        uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+
+      - name: Checkout infra (zpaulsgrove/filegator-infra@main)
+        uses: actions/checkout@v4
+        with:
+          repository: zpaulsgrove/filegator-infra
+          ref: main
+          path: infra
+          ssh-key: ${{ secrets.FILEGATOR_INFRA_DEPLOY_KEY }}
+          persist-credentials: false
+
+      - name: Build deployed image from this commit
+        run: docker build -f infra/staging/Dockerfile.staging -t filegator:ci app
+
+      - name: Smoke test
+        run: infra/ci/smoke-app-image.sh filegator:ci infra/staging/configuration.php
